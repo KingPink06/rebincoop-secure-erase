@@ -48,7 +48,6 @@ jobs:
             --dest /tmp/wheels \
             --no-deps \
             --prefer-binary \
-            --break-system-packages \
             fastapi \
             uvicorn \
             websockets \
