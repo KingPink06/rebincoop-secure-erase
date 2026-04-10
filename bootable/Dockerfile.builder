@@ -15,13 +15,13 @@ FROM alpine:3.19
 LABEL maintainer="REBINCOOP" \
       description="ISO builder for REBINCOOP Secure Erase kiosk"
 
-# ── Enable community repo (needed for xorriso, syslinux, mtools, etc.) ────────
+# ── Enable community repo + install build tools (one layer) ───────────────────
+# alpine:3.19 Docker image only has main repo by default; community is needed
+# for xorriso, syslinux, mtools. Merge into a single RUN so the apk index is
+# written to disk before apk add runs (split RUN layers lose --no-cache index).
 RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/main" > /etc/apk/repositories && \
     echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories && \
-    apk update --no-cache
-
-# ── Build tools ────────────────────────────────────────────────────────────────
-RUN apk add --no-cache \
+    apk add --no-cache \
         bash \
         wget \
         curl \
@@ -52,7 +52,6 @@ RUN mkdir -p /wheels && \
     pip3 download \
         --dest /wheels \
         --no-deps \
-        --no-build-isolation \
         --prefer-binary \
         fastapi \
         uvicorn \
