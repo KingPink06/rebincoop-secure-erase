@@ -15,6 +15,11 @@ FROM alpine:3.19
 LABEL maintainer="REBINCOOP" \
       description="ISO builder for REBINCOOP Secure Erase kiosk"
 
+# ── Enable community repo (needed for xorriso, syslinux, mtools, etc.) ────────
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/main" > /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories && \
+    apk update --no-cache
+
 # ── Build tools ────────────────────────────────────────────────────────────────
 RUN apk add --no-cache \
         bash \
@@ -41,22 +46,27 @@ RUN apk add --no-cache \
         gnupg
 
 # ── Pre-download pip wheels that will be bundled in the ISO ───────────────────
-# (pure-Python wheels work across all Python 3.x)
+# Use --no-build-isolation and pin to concrete versions to avoid resolver failures.
+# All wheels are pure-Python so they work across Alpine's Python 3.x.
 RUN mkdir -p /wheels && \
-    pip3 download --dest /wheels --no-deps \
-        "fastapi>=0.110.0" \
-        "uvicorn>=0.29.0" \
-        "websockets>=12.0" \
-        "fpdf2>=2.7.9" \
-        "python-multipart>=0.0.9" \
-        "anyio>=4.0" \
-        "starlette>=0.36" \
-        "click>=8.0" \
-        "h11>=0.14" \
-        "idna>=3.0" \
-        "sniffio>=1.0" \
-        "exceptiongroup" \
-        "typing_extensions"
+    pip3 download \
+        --dest /wheels \
+        --no-deps \
+        --no-build-isolation \
+        --prefer-binary \
+        fastapi \
+        uvicorn \
+        websockets \
+        fpdf2 \
+        python-multipart \
+        anyio \
+        starlette \
+        click \
+        h11 \
+        idna \
+        sniffio \
+        exceptiongroup \
+        typing_extensions
 
 # ── Copy build context ─────────────────────────────────────────────────────────
 COPY . /build/
