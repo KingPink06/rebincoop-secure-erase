@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REBINCOOP Secure Erase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════════════
+   CSS Custom Properties
+══════════════════════════════════════════════════════ */
+:root {
+  --bg:         #0D0F12;
+  --surface:    #161A1F;
+  --surface2:   #1C2128;
+  --surface3:   #232B34;
+  --border:     #2A3340;
+  --accent:     #00C2FF;
+  --accent-dim: #0099CC;
+  --success:    #00E676;
+  --danger:     #FF3D3D;
+  --warning:    #FFB300;
+  --text:       #F0F4F8;
+  --muted:      #6B7A8D;
+  --muted2:     #4A5568;
+  --mono:       'IBM Plex Mono', monospace;
+  --sans:       'IBM Plex Sans', sans-serif;
+  --radius:     6px;
+  --radius-lg:  10px;
+  --trans:      0.18s ease;
+}
+
+/* ══ Reset & Base ══ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; overflow-x: hidden; }
+a { color: var(--accent); text-decoration: none; }
+button { cursor: pointer; font-family: var(--sans); }
+input, textarea, select { font-family: var(--sans); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted2); }
+
+/* ══ Layout ══ */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ══════════════════════════════════════════════════════
+   HEADER BAR
+══════════════════════════════════════════════════════ */
+#header {
+  background: #08090C;
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.logo-mark {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px rgba(0,194,255,0.4);
+  white-space: nowrap;
+}
+.logo-mark span {
+  color: #FFFFFF;
+  font-weight: 300;
+}
+.header-divider {
+  width: 1px; height: 28px;
+  background: var(--border);
+}
+.app-title {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.header-spacer { flex: 1; }
+.ws-indicator {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; color: var(--muted); font-family: var(--mono);
+}
+.ws-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted2);
+  transition: background var(--trans);
+}
+.ws-dot.connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.ws-dot.error { background: var(--danger); }
+#clock {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 1px;
+  min-width: 160px;
+  text-align: right;
+}
+
+/* ══════════════════════════════════════════════════════
+   TAB NAVIGATION
+══════════════════════════════════════════════════════ */
+#tabs {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  height: 46px;
+  flex-shrink: 0;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  padding: 0 28px;
+  position: relative;
+  transition: color var(--trans);
+  white-space: nowrap;
+}
+.tab-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform var(--trans);
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); }
+.tab-btn.active::after { transform: scaleX(1); }
+.tab-btn:disabled { color: var(--muted2); cursor: not-allowed; }
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent);
+  color: #000;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px; height: 18px;
+  padding: 0 5px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* ══════════════════════════════════════════════════════
+   TAB PANELS
+══════════════════════════════════════════════════════ */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ══════════════════════════════════════════════════════
+   TOOLBAR
+══════════════════════════════════════════════════════ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.toolbar-section {
+  display: flex; align-items: center; gap: 8px;
+}
+.toolbar-divider {
+  width: 1px; height: 28px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+/* ══════════════════════════════════════════════════════
+   BUTTONS
+══════════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all var(--trans);
+  white-space: nowrap;
+  user-select: none;
+}
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+.btn-accent:hover:not(:disabled) {
+  background: #00D9FF;
+  box-shadow: 0 0 16px rgba(0,194,255,0.35);
+}
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #FF5555;
+  box-shadow: 0 0 16px rgba(255,61,61,0.35);
+}
+.btn-success {
+  background: var(--success);
+  border-color: var(--success);
+  color: #000;
+  font-weight: 700;
+}
+.btn-success:hover:not(:disabled) {
+  background: #00FF88;
+  box-shadow: 0 0 16px rgba(0,230,118,0.3);
+}
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.btn-lg {
+  padding: 12px 28px;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 11px;
+}
+
+/* ══════════════════════════════════════════════════════
+   SELECT / INPUT
+══════════════════════════════════════════════════════ */
+.select-styled {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--trans);
+  min-width: 240px;
+}
+.select-styled:focus { border-color: var(--accent); }
+
+.input-styled {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 13px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--trans);
+  width: 100%;
+}
+.input-styled:focus { border-color: var(--accent); }
+.input-styled::placeholder { color: var(--muted2); }
+.input-styled[readonly] {
+  background: var(--surface);
+  color: var(--muted);
+  cursor: default;
+}
+
+textarea.input-styled {
+  resize: vertical;
+  min-height: 80px;
+  font-family: var(--sans);
+}
+
+/* ══════════════════════════════════════════════════════
+   CARDS
+══════════════════════════════════════════════════════ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.card-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card-body { padding: 16px; }
+
+/* ══════════════════════════════════════════════════════
+   DISK CARDS
+══════════════════════════════════════════════════════ */
+#disk-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+  gap: 12px;
+}
+.disk-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--trans), box-shadow var(--trans);
+  overflow: hidden;
+}
+.disk-card:hover:not(.boot-disk) { border-color: var(--muted2); }
+.disk-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.disk-card.boot-disk { opacity: 0.6; border-color: var(--warning); }
+.disk-card.erasing { border-color: var(--accent); }
+.disk-card.completed { border-color: var(--success); }
+.disk-card.failed { border-color: var(--danger); }
+
+.disk-card-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+}
+.disk-checkbox-wrap {
+  flex-shrink: 0;
+}
+.disk-checkbox {
+  width: 18px; height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.disk-icon {
+  width: 44px; height: 44px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  font-size: 9px;
+  font-family: var(--mono);
+  color: var(--muted);
+  gap: 1px;
+  flex-shrink: 0;
+}
+.disk-icon svg { width: 22px; height: 22px; }
+.disk-icon .type-label { font-size: 8px; font-weight: 700; letter-spacing: 0.5px; }
+.disk-icon.hdd .type-label { color: #88AACC; }
+.disk-icon.ssd .type-label { color: var(--accent); }
+.disk-icon.nvme .type-label { color: var(--success); }
+
+.disk-main { flex: 1; min-width: 0; }
+.disk-path {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.disk-model {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.disk-serial {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted2);
+}
+.disk-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.disk-size {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.badges { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ── Badges ── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge-hdd  { background: rgba(136,170,204,0.15); color: #88AACC; border: 1px solid rgba(136,170,204,0.3); }
+.badge-ssd  { background: rgba(0,194,255,0.12);  color: var(--accent); border: 1px solid rgba(0,194,255,0.3); }
+.badge-nvme { background: rgba(0,230,118,0.12);  color: var(--success); border: 1px solid rgba(0,230,118,0.3); }
+.badge-good    { background: rgba(0,230,118,0.12); color: var(--success); border: 1px solid rgba(0,230,118,0.3); }
+.badge-failing { background: rgba(255,61,61,0.12); color: var(--danger);  border: 1px solid rgba(255,61,61,0.3); }
+.badge-unknown { background: rgba(107,122,141,0.15); color: var(--muted);  border: 1px solid var(--border); }
+.badge-pending   { background: rgba(107,122,141,0.15); color: var(--muted); border: 1px solid var(--border); }
+.badge-erasing   { background: rgba(0,194,255,0.12); color: var(--accent); border: 1px solid rgba(0,194,255,0.5); animation: pulse-badge 1.5s ease-in-out infinite; }
+.badge-completed { background: rgba(0,230,118,0.12); color: var(--success); border: 1px solid rgba(0,230,118,0.3); }
+.badge-failed    { background: rgba(255,61,61,0.12); color: var(--danger);  border: 1px solid rgba(255,61,61,0.3); }
+.badge-boot { background: rgba(255,179,0,0.12); color: var(--warning); border: 1px solid rgba(255,179,0,0.35); }
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Boot warning ── */
+.boot-warning {
+  background: rgba(255,179,0,0.08);
+  border-top: 1px solid rgba(255,179,0,0.2);
+  padding: 7px 16px;
+  font-size: 11px;
+  color: var(--warning);
+  display: flex; align-items: center; gap: 7px;
+}
+
+/* ── Progress section ── */
+.disk-progress {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px 12px;
+  display: none;
+}
+.disk-progress.visible { display: block; }
+.progress-track {
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+.progress-fill.done { background: var(--success); }
+.progress-fill.fail { background: var(--danger); }
+.progress-stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.progress-stats .stat-val { color: var(--text); font-weight: 600; }
+.progress-stats .stat-pct { color: var(--accent); font-weight: 700; font-size: 13px; }
+.progress-stats .stat-done { color: var(--success); }
+.progress-stats .stat-fail { color: var(--danger); }
+
+/* ══════════════════════════════════════════════════════
+   BOTTOM ACTION BAR
+══════════════════════════════════════════════════════ */
+#action-bar {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.action-bar-info {
+  font-size: 13px;
+  color: var(--muted);
+}
+.action-bar-info strong { color: var(--text); }
+.action-bar-spacer { flex: 1; }
+
+/* ══════════════════════════════════════════════════════
+   TAB 2 — DATOS DEL TRABAJO
+══════════════════════════════════════════════════════ */
+#tab-job .two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 900px) {
+  #tab-job .two-col { grid-template-columns: 1fr; }
+}
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.form-label .required { color: var(--danger); margin-left: 3px; }
+
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.info-table tr:nth-child(even) td { background: var(--surface2); }
+.info-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.info-table td:first-child {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  width: 180px;
+  white-space: nowrap;
+}
+.info-table td:last-child {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ══════════════════════════════════════════════════════
+   TAB 3 — REPORTE
+══════════════════════════════════════════════════════ */
+#tab-report .report-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+}
+@media (max-width: 1100px) {
+  #tab-report .report-layout { grid-template-columns: 1fr; }
+}
+
+/* PDF Preview mockup */
+.pdf-preview {
+  background: #1A1E24;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: 12px;
+}
+.pdf-hdr {
+  background: #080A0D;
+  padding: 10px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pdf-hdr-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.pdf-hdr-page { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.pdf-body { padding: 20px; }
+.pdf-main-title {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+.pdf-rule { height: 2px; background: var(--accent); margin: 10px 0 14px; border-radius: 1px; }
+.pdf-section { margin-bottom: 14px; }
+.pdf-section-title {
+  background: var(--surface2);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  margin-bottom: 1px;
+}
+.pdf-row {
+  display: flex;
+  font-size: 10px;
+  border-bottom: 1px solid rgba(42,51,64,0.6);
+}
+.pdf-row:nth-child(even) { background: rgba(28,33,40,0.5); }
+.pdf-row .k {
+  color: var(--muted);
+  padding: 4px 8px;
+  width: 130px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.pdf-row .v {
+  color: var(--text);
+  padding: 4px 8px;
+  font-family: var(--mono);
+  flex: 1;
+  word-break: break-all;
+}
+.pdf-row .v.ok { color: var(--success); font-weight: 700; }
+.pdf-row .v.fail { color: var(--danger); font-weight: 700; }
+.pdf-hash {
+  background: var(--surface2);
+  border: 1px solid rgba(0,194,255,0.2);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--accent);
+  word-break: break-all;
+  margin-top: 6px;
+}
+.pdf-footer-line {
+  text-align: center;
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* Export panel */
+.export-panel { display: flex; flex-direction: column; gap: 16px; }
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.usb-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px;
+  cursor: pointer;
+  transition: border-color var(--trans);
+}
+.usb-card:hover { border-color: var(--muted2); }
+.usb-card.selected-usb { border-color: var(--accent); background: rgba(0,194,255,0.05); }
+.usb-radio { accent-color: var(--accent); width: 15px; height: 15px; }
+.usb-info { flex: 1; }
+.usb-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.usb-path { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.usb-free { font-family: var(--mono); font-size: 11px; color: var(--success); margin-top: 2px; }
+.no-usb {
+  background: var(--surface2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.export-status {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--mono);
+  display: none;
+}
+.export-status.ok { background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.3); color: var(--success); display: block; }
+.export-status.err { background: rgba(255,61,61,0.1); border: 1px solid rgba(255,61,61,0.3); color: var(--danger); display: block; }
+
+/* ══════════════════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════════════════ */
+#modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 500;
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(3px);
+}
+#modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  animation: modal-in 0.18s ease;
+}
+@keyframes modal-in {
+  from { transform: scale(0.95); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.modal-hdr {
+  background: var(--danger);
+  padding: 14px 20px;
+  display: flex; align-items: center; gap: 10px;
+}
+.modal-hdr-icon { font-size: 20px; }
+.modal-hdr-title { font-size: 13px; font-weight: 700; letter-spacing: 1px; color: #fff; }
+.modal-body { padding: 22px 20px; }
+.modal-msg { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 14px; }
+.modal-disk-list {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+.modal-disk-item { padding: 3px 0; }
+.modal-warning {
+  background: rgba(255,61,61,0.08);
+  border: 1px solid rgba(255,61,61,0.25);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--danger);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ══════════════════════════════════════════════════════
+   MISC
+══════════════════════════════════════════════════════ */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.empty-state svg { width: 48px; height: 48px; margin-bottom: 14px; opacity: 0.4; }
+.empty-title { font-size: 16px; color: var(--muted); margin-bottom: 6px; }
+.empty-sub { font-size: 13px; color: var(--muted2); }
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.section-title-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 14px;
+}
+.section-title-bar h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.section-title-bar .count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(0,194,255,0.1);
+  border: 1px solid rgba(0,194,255,0.25);
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 18px;
+  font-size: 13px;
+  color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  z-index: 600;
+  max-width: 360px;
+  animation: toast-in 0.2s ease;
+  display: flex; align-items: center; gap: 10px;
+}
+@keyframes toast-in {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.locked-overlay {
+  background: rgba(255,179,0,0.06);
+  border: 1px solid rgba(255,179,0,0.2);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
+  color: var(--warning);
+  font-size: 13px;
+}
+.locked-overlay p { margin-top: 8px; color: var(--muted); font-size: 12px; }
+
+/* ══ Utility ══ */
+.mono { font-family: var(--mono); }
+.text-accent { color: var(--accent); }
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-warning { color: var(--warning); }
+.text-muted { color: var(--muted); }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mb-16 { margin-bottom: 16px; }
+.flex { display: flex; }
+.flex-center { display: flex; align-items: center; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════ HEADER ══════════════ -->
+  <header id="header">
+    <div class="logo-mark">REBIN<span>COOP</span></div>
+    <div class="header-divider"></div>
+    <div class="app-title">Secure Erase System</div>
+    <div class="header-spacer"></div>
+    <div class="ws-indicator">
+      <div class="ws-dot" id="ws-dot"></div>
+      <span id="ws-label">Conectando…</span>
+    </div>
+    <div class="header-divider"></div>
+    <div id="clock">--:--:-- --/--/----</div>
+  </header>
+
+  <!-- ══════════════ TABS ══════════════ -->
+  <nav id="tabs">
+    <button class="tab-btn active" data-tab="discos" onclick="switchTab('discos')">
+      💾 Discos <span class="tab-badge" id="disk-count-badge">0</span>
+    </button>
+    <button class="tab-btn" data-tab="job" onclick="switchTab('job')">
+      📋 Datos del Trabajo
+    </button>
+    <button class="tab-btn" data-tab="report" id="tab-report-btn" onclick="switchTab('report')">
+      📄 Reporte y Exportar
+    </button>
+  </nav>
+
+  <!-- ══════════════ CONTENT ══════════════ -->
+  <main id="content">
+
+    <!-- ──────────── TAB 1: DISCOS ──────────── -->
+    <div class="tab-panel active" id="tab-discos">
+      <div class="toolbar">
+        <div class="toolbar-section">
+          <button class="btn btn-ghost btn-sm" onclick="refreshDisks()">
+            <span id="refresh-icon">⟳</span> Actualizar
+          </button>
+          <div class="toolbar-divider"></div>
+          <button class="btn btn-ghost btn-sm" onclick="selectAll()">Seleccionar todos</button>
+          <button class="btn btn-ghost btn-sm" onclick="deselectAll()">Deseleccionar</button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-section">
+          <label for="erase-method" class="text-muted" style="font-size:11px;font-weight:600;letter-spacing:0.8px;">MÉTODO:</label>
+          <select id="erase-method" class="select-styled" onchange="onMethodChange()">
+            <option value="DoD 5220.22-M (7 pasadas)">DoD 5220.22-M (7 pasadas) — Predeterminado</option>
+            <option value="NIST 800-88 Clear">NIST 800-88 Clear</option>
+            <option value="NIST 800-88 Purge">NIST 800-88 Purge</option>
+            <option value="ATA Secure Erase (SSDs only)">ATA Secure Erase (solo SSDs)</option>
+            <option value="NVMe Sanitize (NVMe only)">NVMe Sanitize (solo NVMe)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-title-bar">
+        <h2>Discos Detectados</h2>
+        <span class="count" id="disk-count-label">0 discos</span>
+        <span class="count text-accent" id="selected-count-label" style="display:none"></span>
+      </div>
+
+      <div id="disk-list">
+        <div class="empty-state">
+          <div class="spinner"></div>
+          <div class="empty-title mt-8">Detectando discos…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────── TAB 2: DATOS DEL TRABAJO ──────────── -->
+    <div class="tab-panel" id="tab-job">
+      <div class="two-col">
+        <!-- Job form -->
+        <div>
+          <div class="section-title-bar mb-16">
+            <h2>Datos del Trabajo</h2>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Técnico <span class="required">*</span></label>
+                <input id="f-tecnico" type="text" class="input-styled" placeholder="Nombre del técnico" oninput="syncJob()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Empresa cliente</label>
+                <input id="f-empresa" type="text" class="input-styled" placeholder="Nombre de la empresa (opcional)" oninput="syncJob()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Número de referencia <span class="required">*</span></label>
+                <input id="f-ref" type="text" class="input-styled" placeholder="Ej: OT-2024-001" oninput="syncJob()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Notas adicionales</label>
+                <textarea id="f-notas" class="input-styled" placeholder="Observaciones, incidencias, etc." oninput="syncJob()"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Fecha</label>
+                <input id="f-fecha" type="text" class="input-styled" readonly>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System info -->
+        <div>
+          <div class="section-title-bar mb-16">
+            <h2>Información del Equipo</h2>
+          </div>
+          <div class="card">
+            <div class="card-body" style="padding:0;">
+              <div id="system-info-loading" style="padding:24px;text-align:center;">
+                <div class="spinner"></div>
+                <div class="text-muted mt-8" style="font-size:12px;">Detectando hardware…</div>
+              </div>
+              <table class="info-table" id="system-info-table" style="display:none;">
+                <tbody id="system-info-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────── TAB 3: REPORTE ──────────── -->
+    <div class="tab-panel" id="tab-report">
+      <div id="report-locked" class="locked-overlay" style="display:none;">
+        <div style="font-size:28px;">🔒</div>
+        <div style="font-size:15px;font-weight:700;margin-top:8px;">Reporte no disponible</div>
+        <p>Completa al menos un borrado de disco para generar el certificado.</p>
+      </div>
+      <div id="report-content" style="display:none;">
+        <div class="report-layout">
+
+          <!-- PDF Preview -->
+          <div>
+            <div class="section-title-bar mb-16">
+              <h2>Vista Previa del Certificado</h2>
+            </div>
+            <div class="pdf-preview" id="pdf-preview">
+              <!-- Generated dynamically -->
+            </div>
+          </div>
+
+          <!-- Export panel -->
+          <div class="export-panel">
+            <div>
+              <div class="section-label">Opciones de Exportación</div>
+
+              <!-- Filename -->
+              <div class="form-group">
+                <label class="form-label">Nombre del archivo</label>
+                <input id="export-filename" type="text" class="input-styled"
+                       placeholder="REBINCOOP_YYYYMMDD_XXXX">
+              </div>
+
+              <!-- Generate -->
+              <button class="btn btn-accent" style="width:100%;justify-content:center;margin-bottom:10px;"
+                      id="btn-gen-pdf" onclick="generatePDF()">
+                ⚙ Generar PDF
+              </button>
+
+              <button class="btn btn-success" style="width:100%;justify-content:center;margin-bottom:4px;display:none;"
+                      id="btn-download" onclick="downloadPDF()">
+                ⬇ Descargar PDF
+              </button>
+            </div>
+
+            <div>
+              <div class="section-label">Unidades USB disponibles</div>
+              <div id="usb-list">
+                <div class="no-usb text-muted">
+                  <div style="font-size:20px;margin-bottom:6px;">🔌</div>
+                  Buscando unidades USB…
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm mt-8" onclick="refreshUSB()" style="width:100%;justify-content:center;">
+                ⟳ Actualizar USBs
+              </button>
+              <button class="btn btn-accent mt-8" style="width:100%;justify-content:center;display:none;"
+                      id="btn-export-usb" onclick="exportToUSB()">
+                📤 Exportar a USB
+              </button>
+            </div>
+
+            <div id="export-status" class="export-status"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ══════════════ BOTTOM ACTION BAR (Tab 1 only) ══════════════ -->
+  <div id="action-bar">
+    <div class="action-bar-info">
+      <span id="action-info">Selecciona discos para borrar</span>
+    </div>
+    <div class="action-bar-spacer"></div>
+    <button id="btn-start" class="btn btn-danger btn-lg" onclick="openConfirmModal()" disabled>
+      ⚠ INICIAR BORRADO
+    </button>
+  </div>
+
+  <!-- ══════════════ CONFIRM MODAL ══════════════ -->
+  <div id="modal-overlay" onclick="handleOverlayClick(event)">
+    <div class="modal">
+      <div class="modal-hdr">
+        <span class="modal-hdr-icon">⚠</span>
+        <span class="modal-hdr-title">ADVERTENCIA — ACCIÓN IRREVERSIBLE</span>
+      </div>
+      <div class="modal-body">
+        <div class="modal-msg">
+          Vas a iniciar el borrado seguro de <strong id="modal-disk-count"></strong>.
+          Esta acción destruirá permanentemente todos los datos.
+        </div>
+        <div class="modal-disk-list" id="modal-disk-list"></div>
+        <div class="modal-warning">
+          ⚠ Esta operación es <strong>irreversible</strong>. Los datos no podrán
+          recuperarse con ninguna herramienta de recuperación convencional.
+          Asegúrate de haber respaldado cualquier información importante.
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeConfirmModal()">Cancelar</button>
+          <button class="btn btn-danger" onclick="confirmStartErase()">
+            Confirmar borrado
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+const S = {
+  disks:          [],
+  selected:       new Set(),   // set of disk paths
+  eraseStatus:    {},          // path → status dict
+  systemInfo:     null,
+  usbDrives:      [],
+  selectedUSB:    null,
+  pdfPath:        null,
+  currentTab:     'discos',
+  ws:             null,
+  wsReady:        false,
+  eraseInProgress:false,
+  anyCompleted:   false,
+  job: {
+    tecnico:    '',
+    empresa:    '',
+    referencia: '',
+    notas:      '',
+    fecha:      new Date().toISOString().split('T')[0],
+  },
+};
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  setDateField();
+  startClock();
+  connectWS();
+  refreshDisks();
+  fetchSystemInfo();
+  generateDefaultFilename();
+});
+
+// ── Clock ──────────────────────────────────────────────────────────────────────
+function startClock() {
+  function tick() {
+    const now = new Date();
+    const time = now.toLocaleTimeString('es-ES', { hour12: false });
+    const date = now.toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric' });
+    document.getElementById('clock').textContent = `${time}  ${date}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+function setDateField() {
+  const d = new Date();
+  const str = d.toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const el = document.getElementById('f-fecha');
+  if (el) { el.value = str; }
+  S.job.fecha = d.toISOString().split('T')[0];
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────────
+function connectWS() {
+  const url = `ws://${location.host}/ws/progress`;
+  S.ws = new WebSocket(url);
+
+  S.ws.onopen = () => {
+    setWSStatus('connected');
+  };
+
+  S.ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'ping') { S.ws.send('ping'); return; }
+      if (msg.type === 'pong') { return; }
+      if (msg.type === 'progress') {
+        handleProgress(msg.disk, msg.data);
+      }
+      if (msg.type === 'status') {
+        Object.entries(msg.data || {}).forEach(([path, data]) => handleProgress(path, data));
+      }
+    } catch (_) {}
+  };
+
+  S.ws.onclose = () => {
+    setWSStatus('error');
+    setTimeout(connectWS, 2500);
+  };
+
+  S.ws.onerror = () => {
+    setWSStatus('error');
+  };
+}
+
+function setWSStatus(state) {
+  const dot = document.getElementById('ws-dot');
+  const lbl = document.getElementById('ws-label');
+  dot.className = 'ws-dot ' + state;
+  const labels = { connected: 'En línea', error: 'Sin conexión' };
+  lbl.textContent = labels[state] || 'Conectando…';
+  S.wsReady = state === 'connected';
+}
+
+// ── Disk fetching ──────────────────────────────────────────────────────────────
+async function refreshDisks() {
+  const icon = document.getElementById('refresh-icon');
+  if (icon) icon.textContent = '⏳';
+  try {
+    const res = await fetch('/api/disks');
+    const { disks } = await res.json();
+    S.disks = disks || [];
+    renderDiskList();
+    updateDiskCountBadge();
+  } catch (e) {
+    showToast('Error al detectar discos: ' + e.message, 'danger');
+  } finally {
+    if (icon) icon.textContent = '⟳';
+  }
+}
+
+// ── Disk rendering ─────────────────────────────────────────────────────────────
+function renderDiskList() {
+  const container = document.getElementById('disk-list');
+  if (!S.disks.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:40px;opacity:0.4;">💾</div>
+        <div class="empty-title mt-8">No se detectaron discos</div>
+        <div class="empty-sub">Haz clic en Actualizar para volver a buscar.</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = S.disks.map(d => diskCardHTML(d)).join('');
+
+  // Restore selection state
+  S.disks.forEach(d => {
+    if (d.is_boot || d.status === 'ERASING' || d.status === 'COMPLETED') {
+      S.selected.delete(d.path);
+    }
+    const cb = document.querySelector(`[data-disk-cb="${d.path}"]`);
+    if (cb) cb.checked = S.selected.has(d.path);
+  });
+
+  // Restore any in-progress status from WS cache
+  Object.entries(S.eraseStatus).forEach(([path, data]) => {
+    updateDiskCardUI(path, data);
+  });
+
+  updateActionBar();
+  updateDiskCountLabel();
+}
+
+function diskCardHTML(d) {
+  const typeBadge = `badge-${d.type.toLowerCase()}`;
+  const healthClass = d.smart?.health === 'GOOD' ? 'badge-good'
+                    : d.smart?.health === 'FAILING' ? 'badge-failing'
+                    : 'badge-unknown';
+  const healthLabel = d.smart?.health || 'UNKNOWN';
+
+  const st = S.eraseStatus[d.path];
+  const status = st ? st.status : (d.status || 'PENDING');
+  const statusClass = `badge-${status.toLowerCase()}`;
+  const statusLabel = { PENDING:'PENDIENTE', ERASING:'BORRANDO', COMPLETED:'COMPLETADO', FAILED:'FALLIDO' }[status] || status;
+
+  const isDisabled = d.is_boot;
+  const disabledAttr = isDisabled ? 'disabled' : '';
+
+  const iconType = d.type === 'NVMe' ? 'nvme' : d.type === 'SSD' ? 'ssd' : 'hdd';
+  const iconLabel = d.type;
+  const diskIconSVG = d.type === 'HDD'
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="5" width="18" height="14" rx="2"/>
+        <circle cx="17" cy="12" r="2"/>
+        <line x1="3" y1="9" x2="21" y2="9"/>
+      </svg>`
+    : d.type === 'SSD'
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="2" y="7" width="20" height="10" rx="2"/>
+        <rect x="5" y="10" width="3" height="4" rx="0.5" fill="currentColor"/>
+        <rect x="10" y="10" width="3" height="4" rx="0.5" fill="currentColor"/>
+        <rect x="15" y="10" width="2" height="4" rx="0.5" fill="currentColor"/>
+      </svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="2" y="8" width="20" height="8" rx="2"/>
+        <line x1="6" y1="12" x2="18" y2="12"/>
+        <circle cx="19" cy="12" r="1" fill="currentColor"/>
+      </svg>`;
+
+  const temp = d.smart?.temperature != null ? `${d.smart.temperature}°C` : '—';
+  const hours = d.smart?.power_on_hours != null ? `${d.smart.power_on_hours.toLocaleString()}h` : '—';
+  const realloc = d.smart?.reallocated_sectors != null ? d.smart.reallocated_sectors : '—';
+
+  const progressVisible = status === 'ERASING' || status === 'COMPLETED' || status === 'FAILED';
+  const pct = st ? st.progress : 0;
+  const fillClass = status === 'COMPLETED' ? 'done' : status === 'FAILED' ? 'fail' : '';
+
+  return `
+<div class="disk-card ${isDisabled ? 'boot-disk' : ''} ${status === 'ERASING' ? 'erasing' : ''} ${status === 'COMPLETED' ? 'completed' : ''} ${status === 'FAILED' ? 'failed' : ''} ${S.selected.has(d.path) ? 'selected' : ''}"
+     id="dcard-${cssId(d.path)}"
+     onclick="toggleDiskSelect('${d.path}', event)">
+  <div class="disk-card-top">
+    <div class="disk-checkbox-wrap">
+      <input type="checkbox" class="disk-checkbox"
+             data-disk-cb="${d.path}"
+             ${isDisabled ? 'disabled' : ''}
+             ${S.selected.has(d.path) ? 'checked' : ''}
+             onclick="event.stopPropagation();toggleDiskSelect('${d.path}', event)">
+    </div>
+    <div class="disk-icon ${iconType}">
+      ${diskIconSVG}
+      <span class="type-label">${iconLabel}</span>
+    </div>
+    <div class="disk-main">
+      <div class="disk-path">${d.path}</div>
+      <div class="disk-model">${d.model}</div>
+      <div class="disk-serial">S/N: ${d.serial}</div>
+    </div>
+    <div class="disk-meta">
+      <div class="disk-size">${d.size_str}</div>
+      <div class="badges">
+        <span class="badge ${typeBadge}">${d.type}</span>
+        <span class="badge ${healthClass}">${healthLabel}</span>
+        <span class="badge ${statusClass}" id="dstatus-${cssId(d.path)}">${statusLabel}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);text-align:right;">
+        ${temp} · ${hours} · ${realloc !== '—' ? realloc + ' realloc' : ''}
+      </div>
+    </div>
+  </div>
+  ${d.is_boot ? `
+  <div class="boot-warning">
+    ⚠ Disco de arranque del sistema — protegido, no se puede seleccionar
+  </div>` : ''}
+  <div class="disk-progress ${progressVisible ? 'visible' : ''}" id="dprog-${cssId(d.path)}">
+    <div class="progress-track">
+      <div class="progress-fill ${fillClass}" id="dfill-${cssId(d.path)}"
+           style="width:${pct}%"></div>
+    </div>
+    <div class="progress-stats" id="dstats-${cssId(d.path)}">
+      ${progressStatsHTML(st, status)}
+    </div>
+  </div>
+</div>`;
+}
+
+function progressStatsHTML(st, status) {
+  if (!st) return '';
+  const pct = st.progress.toFixed(1);
+  const pass = st.total_passes > 1 ? `Pasada ${st.current_pass}/${st.total_passes}` : 'Pasada 1/1';
+  const speed = st.speed_mbs > 0 ? `${st.speed_mbs.toFixed(1)} MB/s` : '—';
+  const eta = st.eta_seconds > 0 ? fmtETA(st.eta_seconds) : '—';
+
+  if (status === 'COMPLETED') {
+    return `<span class="stat-done">✓ Borrado completado</span>
+            <span>${fmtDuration(st.start_time, st.end_time)}</span>`;
+  }
+  if (status === 'FAILED') {
+    return `<span class="stat-fail">✗ ${st.error || 'Error desconocido'}</span>`;
+  }
+  return `
+    <span><span class="stat-val">${pct}%</span></span>
+    <span>${pass}</span>
+    <span class="stat-val">${speed}</span>
+    <span>ETA: <span class="stat-val">${eta}</span></span>`;
+}
+
+function cssId(path) {
+  return path.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+function fmtETA(secs) {
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs/60)}m ${secs%60}s`;
+  return `${Math.floor(secs/3600)}h ${Math.floor((secs%3600)/60)}m`;
+}
+
+function fmtDuration(startISO, endISO) {
+  try {
+    const s = new Date(startISO), e = new Date(endISO);
+    return fmtETA(Math.round((e - s) / 1000));
+  } catch { return '—'; }
+}
+
+// ── Selection ──────────────────────────────────────────────────────────────────
+function toggleDiskSelect(path, evt) {
+  const disk = S.disks.find(d => d.path === path);
+  if (!disk || disk.is_boot) return;
+
+  const st = S.eraseStatus[path];
+  if (st && (st.status === 'ERASING' || st.status === 'COMPLETED')) return;
+
+  if (S.selected.has(path)) {
+    S.selected.delete(path);
+  } else {
+    S.selected.add(path);
+  }
+
+  const card = document.getElementById(`dcard-${cssId(path)}`);
+  const cb = document.querySelector(`[data-disk-cb="${path}"]`);
+  if (card) card.classList.toggle('selected', S.selected.has(path));
+  if (cb) cb.checked = S.selected.has(path);
+
+  updateActionBar();
+  updateSelectedCountLabel();
+}
+
+function selectAll() {
+  S.disks.forEach(d => {
+    if (!d.is_boot) S.selected.add(d.path);
+  });
+  renderDiskList();
+  updateActionBar();
+}
+
+function deselectAll() {
+  S.selected.clear();
+  renderDiskList();
+  updateActionBar();
+}
+
+// ── Action bar ─────────────────────────────────────────────────────────────────
+function updateActionBar() {
+  const btn = document.getElementById('btn-start');
+  const info = document.getElementById('action-info');
+  const count = S.selected.size;
+
+  if (S.eraseInProgress) {
+    btn.disabled = true;
+    info.innerHTML = `<span class="text-accent"><span class="spinner"></span> Borrado en progreso…</span>`;
+  } else if (count === 0) {
+    btn.disabled = true;
+    info.innerHTML = 'Selecciona discos para borrar';
+  } else {
+    btn.disabled = false;
+    info.innerHTML = `<strong>${count}</strong> disco${count>1?'s':''} seleccionado${count>1?'s':''}`;
+  }
+}
+
+function updateDiskCountBadge() {
+  const el = document.getElementById('disk-count-badge');
+  if (el) el.textContent = S.disks.filter(d => !d.is_boot).length;
+}
+function updateDiskCountLabel() {
+  const el = document.getElementById('disk-count-label');
+  if (el) el.textContent = `${S.disks.length} disco${S.disks.length!==1?'s':''}`;
+  updateSelectedCountLabel();
+}
+function updateSelectedCountLabel() {
+  const el = document.getElementById('selected-count-label');
+  if (!el) return;
+  if (S.selected.size > 0) {
+    el.style.display = '';
+    el.textContent = `${S.selected.size} seleccionado${S.selected.size!==1?'s':''}`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── Erase method ───────────────────────────────────────────────────────────────
+function onMethodChange() {
+  // Filter selection by method compatibility
+  const method = document.getElementById('erase-method').value;
+  if (method === 'ATA Secure Erase (SSDs only)') {
+    S.disks.forEach(d => {
+      if (d.type !== 'SSD') S.selected.delete(d.path);
+    });
+    renderDiskList();
+  } else if (method === 'NVMe Sanitize (NVMe only)') {
+    S.disks.forEach(d => {
+      if (d.type !== 'NVMe') S.selected.delete(d.path);
+    });
+    renderDiskList();
+  }
+  updateActionBar();
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+function openConfirmModal() {
+  if (S.selected.size === 0) return;
+  const count = S.selected.size;
+  document.getElementById('modal-disk-count').textContent =
+    `${count} disco${count>1?'s':''}`;
+  const list = document.getElementById('modal-disk-list');
+  list.innerHTML = [...S.selected].map(path => {
+    const d = S.disks.find(x => x.path === path);
+    return `<div class="modal-disk-item">▸ ${path}  ${d ? '— '+d.model : ''}</div>`;
+  }).join('');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeConfirmModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function handleOverlayClick(evt) {
+  if (evt.target === document.getElementById('modal-overlay')) closeConfirmModal();
+}
+
+async function confirmStartErase() {
+  closeConfirmModal();
+  const method = document.getElementById('erase-method').value;
+  const disks = [...S.selected];
+
+  S.eraseInProgress = true;
+  updateActionBar();
+
+  try {
+    const res = await fetch('/api/start-erase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disks, method, job: S.job }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    showToast(`✓ Borrado iniciado en ${disks.length} disco${disks.length>1?'s':''}`, 'success');
+  } catch (e) {
+    S.eraseInProgress = false;
+    updateActionBar();
+    showToast('Error al iniciar el borrado: ' + e.message, 'danger');
+  }
+}
+
+// ── Progress updates ───────────────────────────────────────────────────────────
+function handleProgress(path, data) {
+  S.eraseStatus[path] = data;
+  updateDiskCardUI(path, data);
+
+  // Check global state
+  const allStatuses = Object.values(S.eraseStatus);
+  const anyErasing = allStatuses.some(s => s.status === 'ERASING');
+  const anyDone = allStatuses.some(s => s.status === 'COMPLETED' || s.status === 'FAILED');
+
+  if (!anyErasing && anyDone) {
+    S.eraseInProgress = false;
+    S.anyCompleted = allStatuses.some(s => s.status === 'COMPLETED');
+    updateActionBar();
+    if (S.anyCompleted) {
+      enableReportTab();
+      renderPDFPreview();
+    }
+  }
+}
+
+function updateDiskCardUI(path, data) {
+  const cid = cssId(path);
+  const card = document.getElementById(`dcard-${cid}`);
+  if (!card) return;
+
+  const { status, progress, current_pass, total_passes, speed_mbs, eta_seconds, error } = data;
+
+  // Card border class
+  card.classList.remove('erasing', 'completed', 'failed');
+  if (status === 'ERASING')   card.classList.add('erasing');
+  if (status === 'COMPLETED') card.classList.add('completed');
+  if (status === 'FAILED')    card.classList.add('failed');
+
+  // Status badge
+  const badge = document.getElementById(`dstatus-${cid}`);
+  if (badge) {
+    badge.className = `badge badge-${status.toLowerCase()}`;
+    badge.textContent = {PENDING:'PENDIENTE', ERASING:'BORRANDO', COMPLETED:'COMPLETADO', FAILED:'FALLIDO'}[status] || status;
+  }
+
+  // Progress section
+  const prog = document.getElementById(`dprog-${cid}`);
+  if (prog) {
+    prog.classList.toggle('visible', status !== 'PENDING');
+  }
+
+  // Fill bar
+  const fill = document.getElementById(`dfill-${cid}`);
+  if (fill) {
+    fill.style.width = progress + '%';
+    fill.className = 'progress-fill ' + (status === 'COMPLETED' ? 'done' : status === 'FAILED' ? 'fail' : '');
+  }
+
+  // Stats
+  const stats = document.getElementById(`dstats-${cid}`);
+  if (stats) {
+    stats.innerHTML = progressStatsHTML(data, status);
+  }
+}
+
+// ── System info ────────────────────────────────────────────────────────────────
+async function fetchSystemInfo() {
+  try {
+    const res = await fetch('/api/system');
+    S.systemInfo = await res.json();
+    renderSystemInfo();
+  } catch (e) {
+    console.error('System info error:', e);
+  }
+}
+
+function renderSystemInfo() {
+  const loading = document.getElementById('system-info-loading');
+  const table = document.getElementById('system-info-table');
+  const body = document.getElementById('system-info-body');
+  if (!S.systemInfo) return;
+
+  const si = S.systemInfo;
+  const macs = Array.isArray(si.mac_addresses) ? si.mac_addresses.join('<br>') : si.mac_addresses;
+
+  const rows = [
+    ['Hostname',         si.hostname       || 'N/A'],
+    ['CPU',              si.cpu            || 'N/A'],
+    ['Memoria RAM',      si.ram            || 'N/A'],
+    ['Fabricante placa', si.motherboard_manufacturer || 'N/A'],
+    ['Modelo placa',     si.motherboard_model        || 'N/A'],
+    ['Versión BIOS',     si.bios_version   || 'N/A'],
+    ['SO detectado',     si.os_detected    || 'N/A'],
+    ['Direcciones MAC',  macs              || 'N/A'],
+  ];
+
+  body.innerHTML = rows.map(([k, v]) =>
+    `<tr><td>${k}</td><td>${v}</td></tr>`
+  ).join('');
+
+  if (loading) loading.style.display = 'none';
+  if (table) table.style.display = '';
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  S.currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tab}`);
+  });
+
+  // Show/hide action bar
+  document.getElementById('action-bar').style.display = tab === 'discos' ? 'flex' : 'none';
+
+  if (tab === 'report') {
+    renderPDFPreview();
+    refreshUSB();
+  }
+}
+
+function enableReportTab() {
+  const btn = document.getElementById('tab-report-btn');
+  if (btn) btn.disabled = false;
+  document.getElementById('report-locked').style.display = 'none';
+  document.getElementById('report-content').style.display = '';
+}
+
+// ── PDF Preview ────────────────────────────────────────────────────────────────
+function renderPDFPreview() {
+  const preview = document.getElementById('pdf-preview');
+  if (!preview) return;
+
+  // Show locked state if no completed erases
+  const anyDone = Object.values(S.eraseStatus).some(s => s.status === 'COMPLETED' || s.status === 'FAILED');
+  const locked = document.getElementById('report-locked');
+  const content = document.getElementById('report-content');
+
+  if (!anyDone) {
+    if (locked) locked.style.display = '';
+    if (content) content.style.display = 'none';
+    return;
+  }
+  if (locked) locked.style.display = 'none';
+  if (content) content.style.display = '';
+
+  const si = S.systemInfo || {};
+  const j = S.job;
+  const now = new Date();
+  const ts = now.toLocaleString('es-ES');
+
+  const diskRows = Object.values(S.eraseStatus)
+    .filter(s => s.status === 'COMPLETED' || s.status === 'FAILED')
+    .map((s, i) => {
+      const d = S.disks.find(x => x.path === s.disk) || {};
+      const ok = s.status === 'COMPLETED';
+      const dur = fmtDuration(s.start_time, s.end_time);
+      return `
+        <div class="pdf-section-title" style="margin-top:8px;">Disco ${i+1}: ${s.disk}</div>
+        <div class="pdf-row"><span class="k">Modelo</span><span class="v">${d.model || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Número de serie</span><span class="v">${d.serial || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Capacidad</span><span class="v">${d.size_str || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Tipo</span><span class="v">${d.type || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Método</span><span class="v">${s.method || document.getElementById('erase-method')?.value || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Pasadas</span><span class="v">${s.current_pass}/${s.total_passes}</span></div>
+        <div class="pdf-row"><span class="k">Duración</span><span class="v">${dur}</span></div>
+        <div class="pdf-row"><span class="k">Resultado</span><span class="v ${ok ? 'ok' : 'fail'}">${ok ? '✓ ÉXITO' : '✗ FALLO'}</span></div>`;
+    }).join('');
+
+  const mb = `${si.motherboard_manufacturer || ''} ${si.motherboard_model || ''}`.trim();
+
+  preview.innerHTML = `
+    <div class="pdf-hdr">
+      <span class="pdf-hdr-title">REBINCOOP</span>
+      <span class="pdf-hdr-page">Secure Erase v1.0 · Pág. 1</span>
+    </div>
+    <div class="pdf-body">
+      <div class="pdf-main-title">CERTIFICADO DE BORRADO SEGURO</div>
+      <div class="pdf-rule"></div>
+
+      <div class="pdf-section">
+        <div class="pdf-section-title">INFORMACIÓN DEL TRABAJO</div>
+        <div class="pdf-row"><span class="k">Referencia</span><span class="v">${j.referencia || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Técnico</span><span class="v">${j.tecnico || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Empresa</span><span class="v">${j.empresa || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Fecha</span><span class="v">${j.fecha || '—'}</span></div>
+      </div>
+
+      <div class="pdf-section">
+        <div class="pdf-section-title">INFORMACIÓN DEL EQUIPO</div>
+        <div class="pdf-row"><span class="k">Hostname</span><span class="v">${si.hostname || '—'}</span></div>
+        <div class="pdf-row"><span class="k">CPU</span><span class="v">${si.cpu || '—'}</span></div>
+        <div class="pdf-row"><span class="k">RAM</span><span class="v">${si.ram || '—'}</span></div>
+        <div class="pdf-row"><span class="k">Placa base</span><span class="v">${mb || '—'}</span></div>
+        <div class="pdf-row"><span class="k">BIOS</span><span class="v">${si.bios_version || '—'}</span></div>
+        <div class="pdf-row"><span class="k">SO detectado</span><span class="v">${si.os_detected || 'N/A'}</span></div>
+      </div>
+
+      <div class="pdf-section">
+        <div class="pdf-section-title">DISCOS BORRADOS</div>
+        ${diskRows}
+      </div>
+
+      ${j.notas ? `
+      <div class="pdf-section">
+        <div class="pdf-section-title">NOTAS</div>
+        <div style="padding:6px 10px;font-size:10px;color:var(--text);">${j.notas}</div>
+      </div>` : ''}
+
+      <div class="pdf-section">
+        <div class="pdf-section-title">VERIFICACIÓN SHA-256</div>
+        <div class="pdf-hash" id="pdf-hash-preview">Generando hash…</div>
+      </div>
+
+      <div class="pdf-footer-line">Generado por REBINCOOP Secure Erase · ${ts}</div>
+    </div>`;
+
+  // Async hash
+  computePreviewHash();
+  generateDefaultFilename();
+}
+
+async function computePreviewHash() {
+  const payload = JSON.stringify({
+    job: S.job,
+    disks: Object.values(S.eraseStatus),
+    system: S.systemInfo,
+    ts: new Date().toISOString(),
+  });
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    const el = document.getElementById('pdf-hash-preview');
+    if (el) el.textContent = hex;
+  } catch (_) {}
+}
+
+function generateDefaultFilename() {
+  const now = new Date();
+  const date = now.toISOString().split('T')[0].replace(/-/g,'');
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  const ref = (S.job.referencia || 'X').replace(/[^a-zA-Z0-9\-_]/g,'').slice(0,12) || 'X';
+  const el = document.getElementById('export-filename');
+  if (el && !el.dataset.edited) {
+    el.value = `REBINCOOP_${date}_${ref}_${rand}`;
+  }
+}
+
+// Mark filename as manually edited
+document.addEventListener('DOMContentLoaded', () => {
+  const fn = document.getElementById('export-filename');
+  if (fn) fn.addEventListener('input', () => { fn.dataset.edited = '1'; });
+});
+
+// ── PDF Generation ─────────────────────────────────────────────────────────────
+async function generatePDF() {
+  const btn = document.getElementById('btn-gen-pdf');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generando…';
+
+  try {
+    const diskResults = Object.values(S.eraseStatus).map(s => {
+      const d = S.disks.find(x => x.path === s.disk) || {};
+      return {
+        ...s,
+        model: d.model || 'N/A',
+        serial: d.serial || 'N/A',
+        size_str: d.size_str || 'N/A',
+        type: d.type || 'N/A',
+        method: document.getElementById('erase-method').value,
+      };
+    });
+
+    const res = await fetch('/api/generate-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job: S.job,
+        disks: diskResults,
+        system_info: S.systemInfo || {},
+      }),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const { pdf_path, filename } = await res.json();
+    S.pdfPath = pdf_path;
+
+    document.getElementById('btn-download').style.display = '';
+    document.getElementById('btn-export-usb').style.display = '';
+    showToast(`✓ PDF generado: ${filename}`, 'success');
+  } catch (e) {
+    showToast('Error generando PDF: ' + e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚙ Generar PDF';
+  }
+}
+
+function downloadPDF() {
+  if (!S.pdfPath) return;
+  window.location.href = `/api/download-pdf?path=${encodeURIComponent(S.pdfPath)}`;
+}
+
+// ── USB drives ─────────────────────────────────────────────────────────────────
+async function refreshUSB() {
+  try {
+    const res = await fetch('/api/usb-drives');
+    const { drives } = await res.json();
+    S.usbDrives = drives || [];
+    renderUSBList();
+  } catch (e) {
+    console.error('USB refresh error:', e);
+  }
+}
+
+function renderUSBList() {
+  const container = document.getElementById('usb-list');
+  if (!S.usbDrives.length) {
+    container.innerHTML = `
+      <div class="no-usb">
+        <div style="font-size:20px;margin-bottom:6px;">🔌</div>
+        No se detectaron unidades USB disponibles
+      </div>`;
+    return;
+  }
+  container.innerHTML = S.usbDrives.map((u, i) => `
+    <div class="usb-card ${S.selectedUSB === u.path ? 'selected-usb' : ''}"
+         onclick="selectUSB('${u.path}')">
+      <input type="radio" class="usb-radio" name="usb-select"
+             ${S.selectedUSB === u.path ? 'checked' : ''}
+             onclick="event.stopPropagation();selectUSB('${u.path}')">
+      <div class="usb-info">
+        <div class="usb-name">${u.name}</div>
+        <div class="usb-path">${u.path}</div>
+        <div class="usb-free">${u.free_str}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectUSB(path) {
+  S.selectedUSB = path;
+  renderUSBList();
+}
+
+async function exportToUSB() {
+  if (!S.pdfPath) {
+    showToast('Primero genera el PDF', 'warning'); return;
+  }
+  if (!S.selectedUSB) {
+    showToast('Selecciona una unidad USB', 'warning'); return;
+  }
+
+  const filename = document.getElementById('export-filename').value.trim() || 'REBINCOOP_report';
+  const status = document.getElementById('export-status');
+
+  try {
+    const res = await fetch('/api/export-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pdf_path: S.pdfPath,
+        usb_path: S.selectedUSB,
+        filename,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const { path } = await res.json();
+    status.className = 'export-status ok';
+    status.textContent = `✓ PDF guardado en ${path}`;
+    showToast(`✓ Exportado a ${path}`, 'success');
+  } catch (e) {
+    status.className = 'export-status err';
+    status.textContent = `✗ Error: ${e.message}`;
+    showToast('Error al exportar: ' + e.message, 'danger');
+  }
+}
+
+// ── Job form sync ──────────────────────────────────────────────────────────────
+function syncJob() {
+  S.job.tecnico    = document.getElementById('f-tecnico')?.value || '';
+  S.job.empresa    = document.getElementById('f-empresa')?.value || '';
+  S.job.referencia = document.getElementById('f-ref')?.value    || '';
+  S.job.notas      = document.getElementById('f-notas')?.value  || '';
+  generateDefaultFilename();
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  const icons = { success:'✓', danger:'✗', warning:'⚠', info:'ℹ' };
+  const colors = { success:'var(--success)', danger:'var(--danger)', warning:'var(--warning)', info:'var(--accent)' };
+  el.innerHTML = `<span style="color:${colors[type]||colors.info};font-size:16px;">${icons[type]||'ℹ'}</span> ${msg}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── Keyboard shortcut ──────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeConfirmModal();
+});
+</script>
+</body>
+</html>

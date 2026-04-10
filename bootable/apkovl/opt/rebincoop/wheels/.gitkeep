@@ -1,0 +1,2 @@
+# This directory receives pip wheels at ISO build time.
+# See bootable/scripts/build-iso.sh → "Copying pip wheels" step.

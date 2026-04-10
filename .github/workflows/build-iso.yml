@@ -1,0 +1,110 @@
+name: Build Bootable ISO
+
+# ── Cuándo corre ───────────────────────────────────────────────────────────────
+on:
+  # Disparo manual desde la pestaña Actions en GitHub.com (botón "Run workflow")
+  workflow_dispatch:
+
+  # También auto-dispara al crear un tag  v*  (ej: git tag v1.0 && git push --tags)
+  push:
+    tags:
+      - 'v*'
+
+# ── Job principal ──────────────────────────────────────────────────────────────
+jobs:
+  build-iso:
+    name: Build REBINCOOP Secure Erase ISO
+    runs-on: ubuntu-latest       # GitHub provee una VM Ubuntu gratis
+    timeout-minutes: 60
+
+    permissions:
+      contents: write            # Necesario para crear Releases
+
+    steps:
+
+      # 1. Descarga el código del repositorio
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      # 2. Prepara el contexto de Docker:
+      #    copia los .py y el index.html al directorio bootable/app/
+      #    para que el Dockerfile.builder los encuentre en /build/app/
+      - name: Preparar contexto de build
+        run: |
+          mkdir -p bootable/app
+          for f in main.py disk_manager.py erase_engine.py \
+                   pdf_generator.py system_info.py index.html; do
+            [ -f "$f" ] && cp "$f" bootable/app/ && echo "  → $f copiado"
+          done
+
+      # 3. Construye la imagen Docker del builder
+      #    (instala xorriso, pip, descarga wheels, etc.)
+      - name: Build imagen Docker builder
+        run: |
+          docker build \
+            -f bootable/Dockerfile.builder \
+            -t rebincoop-builder \
+            bootable/
+
+      # 4. Ejecuta el builder → produce el ISO en ./dist/
+      #    Necesita --privileged para xorriso y operaciones de bajo nivel
+      - name: Generar ISO
+        run: |
+          mkdir -p dist
+          docker run \
+            --rm \
+            --privileged \
+            -v "${{ github.workspace }}/dist":/dist \
+            -e DIST_DIR=/dist \
+            rebincoop-builder
+
+      # 5. Muestra info del ISO generado
+      - name: Info del ISO
+        run: |
+          echo "=== ISO generada ==="
+          ls -lh dist/
+          echo ""
+          echo "SHA-256:"
+          cat dist/rebincoop-secure-erase.iso.sha256 2>/dev/null || \
+            sha256sum dist/rebincoop-secure-erase.iso
+
+      # 6. Sube el ISO como artefacto descargable (disponible 30 días)
+      #    → Pestaña Actions → click en el workflow → sección Artifacts → Download
+      - name: Subir ISO como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebincoop-secure-erase-iso
+          path: |
+            dist/rebincoop-secure-erase.iso
+            dist/rebincoop-secure-erase.iso.sha256
+          retention-days: 30
+
+      # 7. Si se disparó por un tag (v1.0, v2.0...) → crea un Release de GitHub
+      #    con el ISO adjunto para descarga permanente
+      - name: Crear GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: REBINCOOP Secure Erase ${{ github.ref_name }}
+          body: |
+            ## REBINCOOP Secure Erase — ISO Booteable ${{ github.ref_name }}
+
+            ### Descargar
+            Haz clic en `rebincoop-secure-erase.iso` abajo (~700 MB).
+
+            ### Flashear al USB
+            **Windows:** Rufus → selecciona el ISO → modo **DD Image** → Start
+            **Linux:** `sudo dd if=rebincoop-secure-erase.iso of=/dev/sdX bs=4M status=progress oflag=sync`
+
+            ### Requisitos
+            - USB de 2 GB o más
+            - PC x86_64 con BIOS o UEFI (Secure Boot **desactivado**)
+            - El sistema arranca en ~60 segundos
+
+            ### Integridad
+            Verifica con el archivo `.sha256` adjunto.
+          files: |
+            dist/rebincoop-secure-erase.iso
+            dist/rebincoop-secure-erase.iso.sha256
+          draft: false
+          prerelease: false

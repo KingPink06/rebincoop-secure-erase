@@ -1,0 +1,18 @@
+# /etc/inittab — REBINCOOP kiosk
+# Replaces the default Alpine inittab.
+# tty1 auto-logs in as 'kiosk' user (no password) and launches startx.
+# tty2 keeps a rescue root shell for emergencies.
+
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+# Auto-login kiosk user on tty1 → .bash_profile will exec startx
+tty1::respawn:/bin/login -f kiosk
+
+# Emergency root shell on tty2 (Ctrl+Alt+F2)
+tty2::respawn:/sbin/getty 38400 tty2
+
+# Shutdown handlers
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown

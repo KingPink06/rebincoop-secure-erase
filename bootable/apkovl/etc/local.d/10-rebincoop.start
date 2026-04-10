@@ -1,0 +1,50 @@
+#!/bin/sh
+# ══════════════════════════════════════════════════════════════════════════════
+# REBINCOOP — 10-rebincoop.start
+# Starts the FastAPI backend (uvicorn on port 8420).
+# Runs as root so it can open disk devices.
+# The frontend (Chromium kiosk) is started separately by .xinitrc as the
+# kiosk user, after X11 is up.
+# ══════════════════════════════════════════════════════════════════════════════
+
+set -e
+LOG=/var/log/rebincoop-app.log
+APP_DIR=/opt/rebincoop
+PIDFILE=/var/run/rebincoop.pid
+
+echo "=== Starting REBINCOOP backend @ $(date) ===" >> "$LOG" 2>&1
+
+if [ ! -f "$APP_DIR/main.py" ]; then
+    echo "ERROR: $APP_DIR/main.py not found!" >> "$LOG"
+    exit 1
+fi
+
+# Kill any previous instance
+if [ -f "$PIDFILE" ]; then
+    OLD_PID=$(cat "$PIDFILE")
+    kill "$OLD_PID" 2>/dev/null || true
+    rm -f "$PIDFILE"
+fi
+
+# Start uvicorn in background
+cd "$APP_DIR"
+python3 -m uvicorn main:app \
+    --host 0.0.0.0 \
+    --port 8420 \
+    --log-level warning \
+    >> "$LOG" 2>&1 &
+
+echo $! > "$PIDFILE"
+echo "uvicorn started with PID $(cat $PIDFILE)" >> "$LOG"
+
+# Wait until the API is up (max 30 s)
+TRIES=0
+until wget -qO /dev/null http://127.0.0.1:8420/api/disks 2>/dev/null; do
+    sleep 1
+    TRIES=$((TRIES + 1))
+    if [ "$TRIES" -ge 30 ]; then
+        echo "WARNING: backend did not respond after 30s" >> "$LOG"
+        break
+    fi
+done
+echo "Backend ready after ${TRIES}s" >> "$LOG"
