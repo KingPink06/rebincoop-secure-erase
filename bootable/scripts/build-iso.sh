@@ -23,8 +23,8 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/releases/${AL
 ALPINE_REPO="https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}"
 
 DIST_DIR="${DIST_DIR:-/dist}"
-BUILD_DIR="/build"
-WHEELS_DIR="/wheels"   # pre-downloaded by Dockerfile
+BUILD_DIR="${BUILD_DIR:-/build}"
+WHEELS_DIR="${WHEELS_DIR:-/wheels}"
 STAGING="/tmp/staging"
 ISO_WORK="/tmp/iso-work"
 APK_CACHE="/tmp/apkcache"
