@@ -98,35 +98,44 @@ ok "ISO extraída en $ISO_WORK ($(du -sh "$ISO_WORK" | cut -f1))"
 # ══════════════════════════════════════════════════════
 step "3/7  Descargando paquetes APK (caché offline)..."
 
-# Configure Alpine repos
-cat > /etc/apk/repositories <<EOF
-${ALPINE_REPO}/main
-${ALPINE_REPO}/community
-EOF
-apk update -q 2>/dev/null || true
+if command -v apk > /dev/null 2>&1; then
+    # Configure Alpine repos — works as root (Docker) or non-root (GitHub runner w/ sudo)
+    if [ "$(id -u)" = "0" ]; then
+        printf '%s\n' "${ALPINE_REPO}/main" "${ALPINE_REPO}/community" \
+            > /etc/apk/repositories
+    else
+        printf '%s\n' "${ALPINE_REPO}/main" "${ALPINE_REPO}/community" \
+            | sudo tee /etc/apk/repositories > /dev/null 2>&1 || true
+    fi
+    apk update -q 2>/dev/null || true
 
-# Fetch packages and all dependencies
-mkdir -p "$APK_CACHE"
-apk fetch --recursive --output "$APK_CACHE" \
-    "${PACKAGES[@]}" 2>/dev/null \
-    || warn "Algunos paquetes no se pudieron descargar — se instalarán desde internet en el primer arranque"
+    # Fetch packages and all dependencies
+    mkdir -p "$APK_CACHE"
+    apk fetch --recursive --output "$APK_CACHE" \
+        --allow-untrusted \
+        "${PACKAGES[@]}" 2>/dev/null \
+        || warn "Algunos paquetes no se pudieron descargar — se instalarán desde internet en el primer arranque"
 
-PKG_COUNT=$(find "$APK_CACHE" -name '*.apk' | wc -l)
-ok "${PKG_COUNT} paquetes descargados"
+    PKG_COUNT=$(find "$APK_CACHE" -name '*.apk' | wc -l)
+    ok "${PKG_COUNT} paquetes descargados"
 
-# Merge APK cache into the ISO's /apks directory
-#   Alpine's initrd looks for packages in /apks/<arch>/ on the boot device
-mkdir -p "${ISO_WORK}/apks/${ALPINE_ARCH}"
-find "$APK_CACHE" -name '*.apk' -exec cp -n {} "${ISO_WORK}/apks/${ALPINE_ARCH}/" \;
+    if [ "$PKG_COUNT" -gt 0 ]; then
+        # Merge APK cache into the ISO's /apks directory
+        mkdir -p "${ISO_WORK}/apks/${ALPINE_ARCH}"
+        find "$APK_CACHE" -name '*.apk' -exec cp -n {} "${ISO_WORK}/apks/${ALPINE_ARCH}/" \;
 
-# Rebuild APKINDEX (unsigned — installer uses --allow-untrusted)
-log "  → Regenerando APKINDEX..."
-apk index \
-    --no-warnings \
-    --output "${ISO_WORK}/apks/${ALPINE_ARCH}/APKINDEX.tar.gz" \
-    "${ISO_WORK}/apks/${ALPINE_ARCH}"/*.apk 2>/dev/null \
-    || warn "No se pudo regenerar APKINDEX — se usará el índice original"
-ok "Caché APK lista en ISO ($(du -sh "${ISO_WORK}/apks" | cut -f1))"
+        # Rebuild APKINDEX (unsigned — installer uses --allow-untrusted)
+        log "  → Regenerando APKINDEX..."
+        apk index \
+            --no-warnings \
+            --output "${ISO_WORK}/apks/${ALPINE_ARCH}/APKINDEX.tar.gz" \
+            "${ISO_WORK}/apks/${ALPINE_ARCH}"/*.apk 2>/dev/null \
+            || warn "No se pudo regenerar APKINDEX — se usará el índice original"
+        ok "Caché APK lista en ISO ($(du -sh "${ISO_WORK}/apks" | cut -f1))"
+    fi
+else
+    warn "apk no disponible — caché offline omitida (se instalará desde internet al primer arranque)"
+fi
 
 # ══════════════════════════════════════════════════════
 # STEP 4 — Build apkovl
