@@ -38,7 +38,6 @@ jobs:
             mtools \
             dosfstools \
             syslinux-utils \
-            apk-tools \
             ca-certificates
 
       # 3. Pre-descarga wheels de Python que irán en el ISO
@@ -49,6 +48,7 @@ jobs:
             --dest /tmp/wheels \
             --no-deps \
             --prefer-binary \
+            --break-system-packages \
             fastapi \
             uvicorn \
             websockets \
