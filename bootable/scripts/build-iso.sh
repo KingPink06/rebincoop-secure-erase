@@ -279,31 +279,26 @@ step "6/7  Creando ISO final (puede tardar unos minutos)..."
 
 mkdir -p "$DIST_DIR"
 
-# Extract the exact boot options from the original Alpine ISO.
-# xorriso -report_el_torito as_mkisofs outputs something like:
-#   -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 ...
-#   -eltorito-alt-boot -e efi.img -no-emul-boot -isohybrid-gpt-basdat
-BOOT_OPTS_RAW=$(xorriso -indev "$ISO_PATH" -report_el_torito as_mkisofs 2>/dev/null || true)
+# Locate boot files by scanning the extracted ISO tree.
+# Avoids xorriso -report_el_torito which produces unquoted output
+# that word-splits unreliably when piped through bash arrays.
+ISOLINUX_BIN=$(find "$ISO_WORK" -name 'isolinux.bin' 2>/dev/null | head -1)
+EFI_IMG=$(find "$ISO_WORK" \( -name 'efi.img' -o -name 'eltorito.img' \) \
+          -path '*/grub/*' 2>/dev/null | head -1)
+# Some Alpine releases put efi.img directly under /boot/
+if [ -z "$EFI_IMG" ]; then
+    EFI_IMG=$(find "$ISO_WORK" \( -name 'efi.img' -o -name 'eltorito.img' \) \
+              2>/dev/null | head -1)
+fi
 
-if [ -n "$BOOT_OPTS_RAW" ]; then
-    log "  → Usando boot record del ISO Alpine original"
-    # Build the command as an array to preserve quoting
-    # shellcheck disable=SC2206
-    BOOT_OPTS_ARR=( $BOOT_OPTS_RAW )
-    xorriso -as mkisofs \
-        "${BOOT_OPTS_ARR[@]}" \
-        -o "$OUTPUT_ISO" \
-        -V "REBINCOOP" \
-        -r -J --joliet-long \
-        "$ISO_WORK/" 2>&1 | tail -5
-else
-    warn "  → No se pudo leer el boot record — creando ISO híbrida desde cero"
-    # Fallback: create a BIOS-bootable ISO using isolinux if available
-    if [ -f "${ISO_WORK}/boot/syslinux/isolinux.bin" ] || \
-       [ -f "${ISO_WORK}/syslinux/isolinux.bin" ]; then
-        ISOLINUX_BIN=$(find "$ISO_WORK" -name 'isolinux.bin' | head -1)
-        ISOLINUX_REL="${ISOLINUX_BIN#${ISO_WORK}/}"
-        BOOT_CAT="${ISOLINUX_REL%/*}/boot.cat"
+if [ -n "$ISOLINUX_BIN" ]; then
+    ISOLINUX_REL="${ISOLINUX_BIN#${ISO_WORK}/}"
+    BOOT_CAT="${ISOLINUX_REL%/*}/boot.cat"
+    log "  → BIOS boot: $ISOLINUX_REL"
+
+    if [ -n "$EFI_IMG" ]; then
+        EFI_REL="${EFI_IMG#${ISO_WORK}/}"
+        log "  → EFI  boot: $EFI_REL"
         xorriso -as mkisofs \
             -o "$OUTPUT_ISO" \
             -V "REBINCOOP" \
@@ -311,16 +306,29 @@ else
             -b "$ISOLINUX_REL" \
             -c "$BOOT_CAT" \
             -no-emul-boot -boot-load-size 4 -boot-info-table \
-            "$ISO_WORK/" 2>&1 | tail -5
+            -eltorito-alt-boot \
+            -e "$EFI_REL" \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            "$ISO_WORK/" 2>&1 | tail -10
     else
-        # Last resort: plain ISO (no boot — user can still dd it as Alpine handles its own boot)
+        warn "  → EFI image not found — BIOS-only boot"
         xorriso -as mkisofs \
             -o "$OUTPUT_ISO" \
             -V "REBINCOOP" \
             -r -J --joliet-long \
-            "$ISO_WORK/" 2>&1 | tail -5
-        warn "  → ISO creada sin MBR bootable (puede requerir Rufus/Ventoy)"
+            -b "$ISOLINUX_REL" \
+            -c "$BOOT_CAT" \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            "$ISO_WORK/" 2>&1 | tail -10
     fi
+else
+    warn "  → isolinux.bin not found — plain ISO (use Rufus/Ventoy to flash)"
+    xorriso -as mkisofs \
+        -o "$OUTPUT_ISO" \
+        -V "REBINCOOP" \
+        -r -J --joliet-long \
+        "$ISO_WORK/" 2>&1 | tail -10
 fi
 
 # Make the image hybrid (bootable when dd'd to USB)
