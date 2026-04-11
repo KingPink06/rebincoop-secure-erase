@@ -1,120 +1,118 @@
 #!/bin/sh
 # ══════════════════════════════════════════════════════════════════════════════
 # REBINCOOP — 00-setup.start
-# Runs at every boot (Alpine diskless = fresh RAM disk each time).
-# 1. Configures APK to use offline cache on the boot device
-# 2. Installs required packages from that cache
-# 3. Installs pip wheels bundled in the apkovl
-# 4. Creates the 'kiosk' user if absent
-# 5. Enables required openrc services
+# Runs once at boot before the kiosk user logs in.
+# Fast path: only installs what's missing (python3, pip wheels).
 # ══════════════════════════════════════════════════════════════════════════════
 
-set -e
 LOG=/var/log/rebincoop-setup.log
+mkdir -p /var/log
 exec >> "$LOG" 2>&1
-
+echo ""
 echo "=== REBINCOOP setup @ $(date) ==="
 
 # ── 1. APK repositories ───────────────────────────────────────────────────────
-# Find the USB boot device (the device that holds our ISO / apkovl)
-# Alpine sets $KIOSK_DEV or we can find it via /proc/cmdline or /media mounts
+ALPINE_VER=$(cat /etc/alpine-release 2>/dev/null | cut -d. -f1-2 || echo "3.19")
+
+# Find our boot device by scanning mounted media for the apkovl file
 BOOT_DEV=""
-for mnt in /media/* /mnt/*; do
-    if [ -f "${mnt}/rebincoop.apkovl.tar.gz" ]; then
+for mnt in /media/usb* /media/cdrom* /media/sr* /run/media/* /mnt; do
+    [ -d "$mnt" ] || continue
+    if [ -f "${mnt}/rebincoop.apkovl.tar.gz" ] || \
+       [ -f "${mnt}/boot/vmlinuz-lts" ]; then
         BOOT_DEV="$mnt"
         break
     fi
 done
+echo "Boot device: ${BOOT_DEV:-not found}"
 
-if [ -n "$BOOT_DEV" ]; then
-    echo "Boot device found: $BOOT_DEV"
-    APK_REPO_DIR="${BOOT_DEV}/apks"
-    # Prefer local offline cache; fall back to network if missing
-    cat > /etc/apk/repositories << EOF
-${APK_REPO_DIR}
-https://dl-cdn.alpinelinux.org/alpine/v$(cat /etc/alpine-release | cut -d. -f1-2)/main
-https://dl-cdn.alpinelinux.org/alpine/v$(cat /etc/alpine-release | cut -d. -f1-2)/community
-EOF
-else
-    echo "WARNING: Boot device not found — using network repos only"
-    ALPINE_VER=$(cat /etc/alpine-release | cut -d. -f1-2)
-    cat > /etc/apk/repositories << EOF
+cat > /etc/apk/repositories << EOF
 https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/main
 https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community
 EOF
-fi
 
-# ── 2. Install APK packages ───────────────────────────────────────────────────
-echo "Installing APK packages..."
-apk update --allow-untrusted 2>/dev/null || true
-apk add --no-cache --allow-untrusted \
+apk update -q 2>/dev/null || echo "WARNING: apk update failed (no network?)"
+
+# ── 2. Install required packages ──────────────────────────────────────────────
+# Alpine extended ISO already ships with many packages. Only add what's missing.
+echo "Checking/installing packages..."
+
+need_packages() {
+    for pkg in "$@"; do
+        apk info -q "$pkg" 2>/dev/null || return 0
+    done
+    return 1
+}
+
+# Core runtime
+apk add --no-cache \
     python3 py3-pip \
     smartmontools hdparm nvme-cli \
-    util-linux lsblk e2fsprogs dosfstools \
-    pciutils usbutils dmidecode \
-    chromium \
-    xorg-server xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
-    xf86-input-libinput xf86-input-keyboard xf86-input-mouse \
-    xinit openbox dbus dbus-openrc \
-    mesa-dri-gallium \
-    font-dejavu \
-    shadow bash || echo "WARNING: Some packages failed to install"
+    util-linux lsblk pciutils usbutils dmidecode \
+    bash shadow \
+    2>/dev/null || echo "WARNING: some APK installs failed"
 
-# ── 3. Install Python packages from bundled wheels ────────────────────────────
+# X11 + kiosk (may already be present in extended ISO)
+apk add --no-cache \
+    xorg-server xinit openbox dbus \
+    xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
+    xf86-input-libinput \
+    mesa-dri-gallium font-dejavu \
+    2>/dev/null || echo "WARNING: some X11 packages failed"
+
+# Chromium (key dependency)
+apk add --no-cache chromium 2>/dev/null || \
+    echo "WARNING: chromium install failed — kiosk will not work"
+
+# ── 3. Python wheels ──────────────────────────────────────────────────────────
 WHEELS_DIR="/opt/rebincoop/wheels"
+APP_DIR="/opt/rebincoop"
+
 if [ -d "$WHEELS_DIR" ] && ls "$WHEELS_DIR"/*.whl > /dev/null 2>&1; then
     echo "Installing pip wheels from $WHEELS_DIR..."
-    pip3 install --no-index --find-links "$WHEELS_DIR" \
+    pip3 install --no-index --find-links "$WHEELS_DIR" --quiet \
         fastapi uvicorn websockets fpdf2 python-multipart \
         anyio starlette click h11 2>/dev/null || \
-        pip3 install --find-links "$WHEELS_DIR" \
-            fastapi uvicorn websockets fpdf2 python-multipart || \
-        echo "WARNING: Some pip packages failed"
+    pip3 install --break-system-packages --no-index \
+        --find-links "$WHEELS_DIR" --quiet \
+        fastapi uvicorn websockets fpdf2 python-multipart \
+        anyio starlette click h11 2>/dev/null || \
+    echo "WARNING: pip wheel install failed"
 else
-    echo "Wheels dir not found, trying network install..."
-    pip3 install --no-cache-dir \
-        fastapi uvicorn websockets fpdf2 python-multipart || \
-        echo "WARNING: pip network install failed"
+    echo "Wheels not found — trying network..."
+    pip3 install --no-cache-dir --quiet \
+        fastapi uvicorn websockets fpdf2 python-multipart 2>/dev/null || \
+    pip3 install --break-system-packages --no-cache-dir --quiet \
+        fastapi uvicorn websockets fpdf2 python-multipart 2>/dev/null || \
+    echo "WARNING: pip network install failed"
 fi
 
-# ── 4. Create kiosk user ──────────────────────────────────────────────────────
+# ── 4. Kiosk user ─────────────────────────────────────────────────────────────
 if ! id kiosk > /dev/null 2>&1; then
     echo "Creating kiosk user..."
+    adduser -D -h /home/kiosk -s /bin/bash kiosk 2>/dev/null || \
     adduser -D -h /home/kiosk -s /bin/sh kiosk
-    # Allow kiosk to access disk devices (for erase engine)
-    addgroup kiosk disk
-    addgroup kiosk input
-    addgroup kiosk video
+    addgroup kiosk disk  2>/dev/null || true
+    addgroup kiosk input 2>/dev/null || true
+    addgroup kiosk video 2>/dev/null || true
 fi
 
-# Ensure home directory and files are in place
-mkdir -p /home/kiosk
-# The apkovl already placed .xinitrc and .bash_profile, but set perms
+mkdir -p /home/kiosk/.config/openbox
 chown -R kiosk:kiosk /home/kiosk
-chmod 755 /home/kiosk/.xinitrc 2>/dev/null || true
-chmod 644 /home/kiosk/.bash_profile 2>/dev/null || true
+chmod +x /home/kiosk/.xinitrc  2>/dev/null || true
+chmod +x /home/kiosk/.bash_profile 2>/dev/null || true
 
-# ── 5. Runtime directories ────────────────────────────────────────────────────
-mkdir -p /tmp/runtime-kiosk
-chown kiosk:kiosk /tmp/runtime-kiosk
-chmod 700 /tmp/runtime-kiosk
-
-mkdir -p /tmp/chromium-cache /tmp/chromium-data
-chown -R kiosk:kiosk /tmp/chromium-cache /tmp/chromium-data
-
-mkdir -p /tmp/rebincoop
+# ── 5. Runtime dirs ───────────────────────────────────────────────────────────
+mkdir -p /tmp/runtime-kiosk /tmp/chromium-cache /tmp/chromium-data /tmp/rebincoop
+chown -R kiosk:kiosk /tmp/runtime-kiosk /tmp/chromium-cache /tmp/chromium-data
 chmod 777 /tmp/rebincoop
 
-# ── 6. Enable services ────────────────────────────────────────────────────────
-echo "Enabling services..."
+# ── 6. Services ───────────────────────────────────────────────────────────────
 rc-update add local default 2>/dev/null || true
-rc-update add dbus default 2>/dev/null || true
+rc-update add dbus  default 2>/dev/null || true
+rc-service dbus start       2>/dev/null || true
 
-# Start dbus now
-rc-service dbus start 2>/dev/null || true
-
-# ── 7. Allow kiosk user to run X without SUID ────────────────────────────────
-# Required for rootless X on some setups
+# Allow X to run as kiosk
 chmod u+s /usr/bin/Xorg 2>/dev/null || true
 
 echo "=== Setup complete @ $(date) ==="
