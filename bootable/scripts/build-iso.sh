@@ -205,42 +205,61 @@ done
 
 if [ -n "$GRUB_CFG" ]; then
     cp "$GRUB_CFG" "${GRUB_CFG}.orig"
-    cat > "$GRUB_CFG" <<'GRUBEOF'
-# ── REBINCOOP Secure Erase ──────────────────────────────────────────────────
+
+    # ── Extraer los parámetros exactos que usa Alpine en su GRUB original ──
+    # Así usamos los params probados por Alpine (módulos, quiet, etc.)
+    # y solo añadimos modloop= y apkovl= encima.
+    ORIG_LINUX_LINE=$(grep -m1 'vmlinuz' "${GRUB_CFG}.orig" || true)
+    if [ -n "$ORIG_LINUX_LINE" ]; then
+        # Tomar todo lo que viene después de vmlinuz-lts (o vmlinuz)
+        ORIG_PARAMS=$(echo "$ORIG_LINUX_LINE" \
+            | sed 's|.*vmlinuz[^ ]*||' \
+            | sed 's/apkovl=[^ ]*//g' \
+            | sed 's/modloop=[^ ]*//g' \
+            | tr -s ' ' | sed 's/^ //;s/ $//')
+    fi
+    # Fallback si no se encontró nada útil
+    ORIG_PARAMS="${ORIG_PARAMS:-modules=loop,squashfs,sd-mod,usb-storage quiet}"
+    log "  Params Alpine originales: $ORIG_PARAMS"
+
+    # Parámetros finales: los de Alpine + modloop explícito + apkovl
+    BOOT_PARAMS="${ORIG_PARAMS} modloop=/boot/modloop-lts apkovl=rebincoop"
+    VERB_PARAMS="${ORIG_PARAMS} modloop=/boot/modloop-lts apkovl=rebincoop debug_init"
+    SHELL_PARAMS="${ORIG_PARAMS} modloop=/boot/modloop-lts"
+
+    {
+        cat <<'GRUB_HEADER'
+# ── REBINCOOP Secure Erase ─────────────────────────────────────────────────
 set default=0
 set timeout=5
 set timeout_style=menu
 
 if loadfont /boot/grub/fonts/unicode.pf2; then
-    set gfxmode=1920x1080,1280x720,auto
+    set gfxmode=auto
     insmod all_video
     insmod gfxterm
     terminal_output gfxterm
 fi
 
-menuentry "REBINCOOP Secure Erase" --class rebincoop {
-    linux  /boot/vmlinuz-lts \
-           modules=loop,squashfs,sd-mod,usb-storage \
-           apkovl=rebincoop \
-           quiet loglevel=0
-    initrd /boot/initramfs-lts
-}
+GRUB_HEADER
+        printf 'menuentry "REBINCOOP Secure Erase" --class rebincoop {\n'
+        printf '    linux  /boot/vmlinuz-lts %s\n' "$BOOT_PARAMS"
+        printf '    initrd /boot/initramfs-lts\n'
+        printf '}\n\n'
 
-menuentry "REBINCOOP Secure Erase (verbose)" --class rebincoop {
-    linux  /boot/vmlinuz-lts \
-           modules=loop,squashfs,sd-mod,usb-storage \
-           apkovl=rebincoop \
-           loglevel=5
-    initrd /boot/initramfs-lts
-}
+        printf 'menuentry "REBINCOOP Verbose (debug)" --class rebincoop {\n'
+        printf '    linux  /boot/vmlinuz-lts %s\n' "$VERB_PARAMS"
+        printf '    initrd /boot/initramfs-lts\n'
+        printf '}\n\n'
 
-menuentry "Shell de emergencia (sin overlay)" --class alpine {
-    linux  /boot/vmlinuz-lts \
-           modules=loop,squashfs,sd-mod,usb-storage
-    initrd /boot/initramfs-lts
-}
-GRUBEOF
-    ok "GRUB personalizado: $GRUB_CFG"
+        printf 'menuentry "Shell de emergencia (sin overlay)" --class alpine {\n'
+        printf '    linux  /boot/vmlinuz-lts %s\n' "$SHELL_PARAMS"
+        printf '    initrd /boot/initramfs-lts\n'
+        printf '}\n'
+    } > "$GRUB_CFG"
+
+    ok "GRUB personalizado (modloop + apkovl añadidos a params Alpine originales)"
+    log "  → Línea boot: linux /boot/vmlinuz-lts $BOOT_PARAMS"
 else
     warn "grub.cfg no encontrado — se usa el menú por defecto de Alpine"
 fi
@@ -251,10 +270,16 @@ if [ ! -f "$SYSLINUX_CFG" ]; then
     SYSLINUX_CFG="${ISO_WORK}/boot/syslinux/syslinux.cfg"
 fi
 if [ -f "$SYSLINUX_CFG" ]; then
-    # Inject our label at the top
-    sed -i '1s/^/DEFAULT rebincoop\nLABEL rebincoop\n  MENU LABEL REBINCOOP Secure Erase\n  KERNEL \/boot\/vmlinuz-lts\n  INITRD \/boot\/initramfs-lts\n  APPEND modules=loop,squashfs,sd-mod,usb-storage apkovl=rebincoop quiet\n\n/' \
+    # Leer el APPEND original de syslinux (params probados por Alpine)
+    ORIG_APPEND=$(grep -m1 '^[[:space:]]*APPEND' "$SYSLINUX_CFG" \
+        | sed 's/.*APPEND//' \
+        | sed 's/apkovl=[^ ]*//g' \
+        | sed 's/modloop=[^ ]*//g' \
+        | tr -s ' ' | sed 's/^ //;s/ $//' || echo "modules=loop,squashfs,sd-mod,usb-storage quiet")
+    NEW_APPEND="${ORIG_APPEND} modloop=/boot/modloop-lts apkovl=rebincoop"
+    sed -i "1s|^|DEFAULT rebincoop\nLABEL rebincoop\n  MENU LABEL REBINCOOP Secure Erase\n  KERNEL /boot/vmlinuz-lts\n  INITRD /boot/initramfs-lts\n  APPEND ${NEW_APPEND}\n\n|" \
         "$SYSLINUX_CFG" 2>/dev/null || true
-    ok "syslinux.cfg personalizado"
+    ok "syslinux.cfg personalizado (APPEND: $NEW_APPEND)"
 fi
 
 # ══════════════════════════════════════════════════════
