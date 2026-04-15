@@ -6,71 +6,57 @@ on:
     tags:
       - 'v*'
 
-jobs:
-  build-iso:
-    name: Build REBINCOOP Secure Erase ISO
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+# ══════════════════════════════════════════════════════════════════════════════
+# JOB 1 — Descargar paquetes APK y wheels Python dentro de un contenedor Alpine.
+#          Así evitamos Docker-in-Docker y el rate-limit de Docker Hub.
+# JOB 2 — Construir el ISO en ubuntu-latest usando los paquetes del job 1.
+# ══════════════════════════════════════════════════════════════════════════════
 
-    permissions:
-      contents: write
+jobs:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  fetch-packages:
+    name: Descargar paquetes (Alpine container)
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.19        # ← el runner corre DENTRO de Alpine
 
     steps:
-
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      # ── Herramientas del sistema ───────────────────────────────────────────
-      - name: Instalar dependencias del sistema
+      - name: Configurar repos y herramientas base
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            xorriso wget python3 python3-pip \
-            mtools dosfstools syslinux-utils ca-certificates
+          printf '%s\n' \
+            'https://dl-cdn.alpinelinux.org/alpine/v3.19/main' \
+            'https://dl-cdn.alpinelinux.org/alpine/v3.19/community' \
+            > /etc/apk/repositories
+          apk update -q
+          apk add --no-cache python3 py3-pip
 
-      # ── Paquetes APK offline via Docker Alpine ─────────────────────────────
-      # Docker está preinstalado en ubuntu-latest. Usamos un contenedor Alpine
-      # para ejecutar "apk fetch --recursive" y generar el APKINDEX.
-      # Resultado: /tmp/apkcache con todos los .apk + APKINDEX.tar.gz
-      - name: Descargar paquetes APK offline (via Alpine Docker)
+      - name: Descargar paquetes APK con dependencias
         run: |
           mkdir -p /tmp/apkcache
-          docker run --rm \
-            -v /tmp/apkcache:/apkcache \
-            alpine:3.19 sh -c '
-              set -e
-              printf "%s\n" \
-                "https://dl-cdn.alpinelinux.org/alpine/v3.19/main" \
-                "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" \
-                > /etc/apk/repositories
-              apk update -q
+          apk fetch -q --recursive --output /tmp/apkcache \
+            python3 py3-pip \
+            smartmontools hdparm nvme-cli \
+            util-linux lsblk pciutils usbutils dmidecode \
+            e2fsprogs dosfstools \
+            chromium \
+            xorg-server \
+            xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
+            xf86-input-libinput xf86-input-keyboard xf86-input-mouse \
+            xinit openbox dbus dbus-openrc \
+            mesa-dri-gallium font-dejavu \
+            shadow bash libxrandr xrandr
+          echo "APK descargados: $(ls /tmp/apkcache/*.apk | wc -l)"
 
-              echo "Descargando paquetes..."
-              apk fetch -q --recursive --output /apkcache \
-                python3 py3-pip \
-                smartmontools hdparm nvme-cli \
-                util-linux lsblk pciutils usbutils dmidecode \
-                chromium \
-                xorg-server \
-                xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
-                xf86-input-libinput xf86-input-keyboard xf86-input-mouse \
-                xinit openbox dbus dbus-openrc \
-                mesa-dri-gallium font-dejavu \
-                shadow bash libxrandr xrandr \
-                e2fsprogs dosfstools
+      - name: Generar APKINDEX (índice local sin firma)
+        run: |
+          cd /tmp/apkcache
+          apk index --no-warnings \
+            --output APKINDEX.tar.gz \
+            *.apk
+          echo "APKINDEX generado: $(du -sh APKINDEX.tar.gz)"
 
-              echo "Generando APKINDEX..."
-              cd /apkcache
-              apk index --no-warnings \
-                --output APKINDEX.tar.gz \
-                *.apk
-
-              echo "Paquetes en cache: $(ls *.apk | wc -l)"
-            '
-          echo "Cache local: $(ls /tmp/apkcache | wc -l) archivos"
-
-      # ── Wheels de Python offline ───────────────────────────────────────────
-      - name: Descargar wheels de Python offline
+      - name: Descargar wheels Python offline
         run: |
           mkdir -p /tmp/wheels
           pip3 download \
@@ -82,7 +68,57 @@ jobs:
             exceptiongroup typing_extensions
           echo "Wheels: $(ls /tmp/wheels | wc -l)"
 
-      # ── Archivos de la app ─────────────────────────────────────────────────
+      - name: Subir caché APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-cache
+          path: /tmp/apkcache/
+          retention-days: 1
+
+      - name: Subir wheels Python como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels
+          path: /tmp/wheels/
+          retention-days: 1
+
+  # ────────────────────────────────────────────────────────────────────────────
+  build-iso:
+    name: Build REBINCOOP Secure Erase ISO
+    runs-on: ubuntu-latest
+    needs: fetch-packages          # espera a que job 1 termine
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar herramientas del sistema
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            xorriso wget mtools dosfstools syslinux-utils ca-certificates
+
+      - name: Descargar caché APK
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-cache
+          path: /tmp/apkcache
+
+      - name: Descargar wheels Python
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheels
+          path: /tmp/wheels
+
+      - name: Verificar paquetes descargados
+        run: |
+          echo "APK: $(ls /tmp/apkcache/*.apk 2>/dev/null | wc -l) paquetes"
+          echo "Wheels: $(ls /tmp/wheels/*.whl 2>/dev/null | wc -l) wheels"
+
       - name: Preparar archivos de la app
         run: |
           mkdir -p bootable/app
@@ -91,7 +127,6 @@ jobs:
             [ -f "$f" ] && cp "$f" bootable/app/ && echo "  → $f"
           done
 
-      # ── Build del ISO ──────────────────────────────────────────────────────
       - name: Generar ISO
         run: |
           mkdir -p dist
@@ -101,17 +136,12 @@ jobs:
           export APKCACHE_DIR=/tmp/apkcache
           bash bootable/scripts/build-iso.sh
 
-      # ── Info del resultado ─────────────────────────────────────────────────
       - name: Info del ISO
         run: |
           echo "=== ISO generada ==="
           ls -lh dist/
-          echo ""
-          echo "SHA-256:"
-          cat dist/rebincoop-secure-erase.iso.sha256 2>/dev/null || \
-            sha256sum dist/rebincoop-secure-erase.iso
+          sha256sum dist/rebincoop-secure-erase.iso | tee dist/rebincoop-secure-erase.iso.sha256
 
-      # ── Subir artefacto ────────────────────────────────────────────────────
       - name: Subir ISO como artefacto
         uses: actions/upload-artifact@v4
         with:
@@ -121,7 +151,6 @@ jobs:
             dist/rebincoop-secure-erase.iso.sha256
           retention-days: 30
 
-      # ── GitHub Release en tags ─────────────────────────────────────────────
       - name: Crear GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -130,18 +159,18 @@ jobs:
           body: |
             ## REBINCOOP Secure Erase ${{ github.ref_name }} — ISO 100% Offline
 
-            ### Descargar
-            `rebincoop-secure-erase.iso` (~1 GB)
+            **Sin internet requerido** — paquetes APK y wheels Python incluidos.
 
             ### USB (Windows)
-            Rufus → DD Image mode → Start
+            Rufus → modo **DD Image** → Start
 
-            ### PXE (red local, sin internet)
-            Ver `README-PXE.md` en el repositorio.
+            ### PXE (red local)
+            Extraer `vmlinuz-lts`, `initramfs-lts`, `modloop-lts` y
+            `rebincoop.apkovl.tar.gz` del ISO y servir desde el servidor PXE/HTTP.
+            Kernel params: `apkovl=rebincoop alpine_dev=<ip_servidor>`
 
             ### Requisitos
             - x86_64, BIOS o UEFI (Secure Boot **desactivado**)
-            - Sin internet — todo incluido en el ISO
           files: |
             dist/rebincoop-secure-erase.iso
             dist/rebincoop-secure-erase.iso.sha256
