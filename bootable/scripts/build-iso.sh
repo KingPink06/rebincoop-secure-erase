@@ -25,6 +25,7 @@ ALPINE_REPO="https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}"
 DIST_DIR="${DIST_DIR:-/dist}"
 BUILD_DIR="${BUILD_DIR:-/build}"
 WHEELS_DIR="${WHEELS_DIR:-/wheels}"
+APKCACHE_DIR="${APKCACHE_DIR:-}"
 STAGING="/tmp/staging"
 ISO_WORK="/tmp/iso-work"
 APK_CACHE="/tmp/apkcache"
@@ -96,45 +97,29 @@ ok "ISO extraída en $ISO_WORK ($(du -sh "$ISO_WORK" | cut -f1))"
 # ══════════════════════════════════════════════════════
 # STEP 3 — Offline APK cache
 # ══════════════════════════════════════════════════════
-step "3/7  Descargando paquetes APK (caché offline)..."
+step "3/7  Copiando paquetes APK (caché offline)..."
 
-if command -v apk > /dev/null 2>&1; then
-    # Configure Alpine repos — works as root (Docker) or non-root (GitHub runner w/ sudo)
-    if [ "$(id -u)" = "0" ]; then
-        printf '%s\n' "${ALPINE_REPO}/main" "${ALPINE_REPO}/community" \
-            > /etc/apk/repositories
+# APKCACHE_DIR is pre-populated by the GitHub Actions step that runs
+# "apk fetch --recursive" inside an Alpine Docker container.
+APK_DEST="${ISO_WORK}/apks/${ALPINE_ARCH}"
+mkdir -p "$APK_DEST"
+
+if [ -n "$APKCACHE_DIR" ] && [ -d "$APKCACHE_DIR" ] && \
+   ls "$APKCACHE_DIR"/*.apk > /dev/null 2>&1; then
+
+    PKG_COUNT=$(ls "$APKCACHE_DIR"/*.apk | wc -l)
+    log "  → Copiando ${PKG_COUNT} paquetes al ISO..."
+    find "$APKCACHE_DIR" -name '*.apk' -exec cp -n {} "$APK_DEST/" \;
+
+    # Copy pre-built APKINDEX (built by apk index inside Docker)
+    if [ -f "$APKCACHE_DIR/APKINDEX.tar.gz" ]; then
+        cp "$APKCACHE_DIR/APKINDEX.tar.gz" "$APK_DEST/"
+        ok "${PKG_COUNT} paquetes + APKINDEX listos ($(du -sh "$APK_DEST" | cut -f1))"
     else
-        printf '%s\n' "${ALPINE_REPO}/main" "${ALPINE_REPO}/community" \
-            | sudo tee /etc/apk/repositories > /dev/null 2>&1 || true
-    fi
-    apk update -q 2>/dev/null || true
-
-    # Fetch packages and all dependencies
-    mkdir -p "$APK_CACHE"
-    apk fetch --recursive --output "$APK_CACHE" \
-        --allow-untrusted \
-        "${PACKAGES[@]}" 2>/dev/null \
-        || warn "Algunos paquetes no se pudieron descargar — se instalarán desde internet en el primer arranque"
-
-    PKG_COUNT=$(find "$APK_CACHE" -name '*.apk' | wc -l)
-    ok "${PKG_COUNT} paquetes descargados"
-
-    if [ "$PKG_COUNT" -gt 0 ]; then
-        # Merge APK cache into the ISO's /apks directory
-        mkdir -p "${ISO_WORK}/apks/${ALPINE_ARCH}"
-        find "$APK_CACHE" -name '*.apk' -exec cp -n {} "${ISO_WORK}/apks/${ALPINE_ARCH}/" \;
-
-        # Rebuild APKINDEX (unsigned — installer uses --allow-untrusted)
-        log "  → Regenerando APKINDEX..."
-        apk index \
-            --no-warnings \
-            --output "${ISO_WORK}/apks/${ALPINE_ARCH}/APKINDEX.tar.gz" \
-            "${ISO_WORK}/apks/${ALPINE_ARCH}"/*.apk 2>/dev/null \
-            || warn "No se pudo regenerar APKINDEX — se usará el índice original"
-        ok "Caché APK lista en ISO ($(du -sh "${ISO_WORK}/apks" | cut -f1))"
+        warn "APKINDEX no encontrado — el arranque offline puede fallar"
     fi
 else
-    warn "apk no disponible — caché offline omitida (se instalará desde internet al primer arranque)"
+    warn "Sin caché APK (APKCACHE_DIR vacío) — el arranque requerirá internet"
 fi
 
 # ══════════════════════════════════════════════════════

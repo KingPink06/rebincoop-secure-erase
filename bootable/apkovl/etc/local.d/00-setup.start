@@ -1,8 +1,8 @@
 #!/bin/sh
 # ══════════════════════════════════════════════════════════════════════════════
-# REBINCOOP — 00-setup.start
-# Runs once at boot before the kiosk user logs in.
-# Fast path: only installs what's missing (python3, pip wheels).
+# REBINCOOP — 00-setup.start  (100% OFFLINE)
+# Instala paquetes APK y wheels Python desde el caché incluido en el ISO.
+# No necesita internet. Funciona en USB y PXE con servidor local.
 # ══════════════════════════════════════════════════════════════════════════════
 
 LOG=/var/log/rebincoop-setup.log
@@ -11,108 +11,124 @@ exec >> "$LOG" 2>&1
 echo ""
 echo "=== REBINCOOP setup @ $(date) ==="
 
-# ── 1. APK repositories ───────────────────────────────────────────────────────
-ALPINE_VER=$(cat /etc/alpine-release 2>/dev/null | cut -d. -f1-2 || echo "3.19")
+# ── 0. Crear usuario kiosk PRIMERO ────────────────────────────────────────────
+# Se crea antes de todo lo demás para que el auto-login de inittab
+# (tty1::respawn:/bin/login -f kiosk) nunca falle por usuario inexistente.
+if ! id kiosk > /dev/null 2>&1; then
+    adduser -D -h /home/kiosk -s /bin/sh kiosk 2>/dev/null || true
+    echo "kiosk:kiosk" | chpasswd 2>/dev/null || true   # password fallback
+fi
+mkdir -p /home/kiosk
+chown kiosk:kiosk /home/kiosk
 
-# Find our boot device by scanning mounted media for the apkovl file
+# ── 1. Localizar el dispositivo de arranque ───────────────────────────────────
+# Alpine monta el dispositivo que contiene el apkovl bajo /media/.
+# Buscamos el directorio que tiene nuestros apks.
 BOOT_DEV=""
-for mnt in /media/usb* /media/cdrom* /media/sr* /run/media/* /mnt; do
+for mnt in /media/usb* /media/cdrom* /media/sr* /media/sda* /media/sdb* \
+           /run/alpine /run/media/* /mnt /media; do
     [ -d "$mnt" ] || continue
-    if [ -f "${mnt}/rebincoop.apkovl.tar.gz" ] || \
-       [ -f "${mnt}/boot/vmlinuz-lts" ]; then
+    if [ -d "${mnt}/apks" ] || [ -f "${mnt}/rebincoop.apkovl.tar.gz" ]; then
         BOOT_DEV="$mnt"
         break
     fi
 done
-echo "Boot device: ${BOOT_DEV:-not found}"
 
-cat > /etc/apk/repositories << EOF
-https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/main
-https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community
-EOF
+echo "Dispositivo de arranque: ${BOOT_DEV:-no encontrado}"
 
-apk update -q 2>/dev/null || echo "WARNING: apk update failed (no network?)"
+# ── 2. Configurar APK solo desde caché local ──────────────────────────────────
+LOCAL_APK_REPO=""
+if [ -n "$BOOT_DEV" ] && [ -d "${BOOT_DEV}/apks" ] && \
+   ls "${BOOT_DEV}/apks"/*.apk > /dev/null 2>&1; then
+    LOCAL_APK_REPO="${BOOT_DEV}/apks"
+elif [ -d "/apks" ] && ls "/apks"/*.apk > /dev/null 2>&1; then
+    # Alpine extended ISO extrae apks/ directamente accesible
+    LOCAL_APK_REPO="/apks"
+fi
 
-# ── 2. Install required packages ──────────────────────────────────────────────
-# Alpine extended ISO already ships with many packages. Only add what's missing.
-echo "Checking/installing packages..."
+if [ -n "$LOCAL_APK_REPO" ]; then
+    echo "Usando APK caché local: $LOCAL_APK_REPO"
+    # El repo local es el directorio con APKINDEX.tar.gz y los .apk
+    printf '%s\n' "$LOCAL_APK_REPO" > /etc/apk/repositories
+    apk update -q --allow-untrusted 2>/dev/null || true
+else
+    echo "ERROR: No se encontró el caché APK local."
+    echo "Intentando red como último recurso..."
+    ALPINE_VER=$(cat /etc/alpine-release 2>/dev/null | cut -d. -f1-2 || echo "3.19")
+    printf '%s\n' \
+        "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/main" \
+        "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community" \
+        > /etc/apk/repositories
+    apk update -q 2>/dev/null || true
+fi
 
-need_packages() {
-    for pkg in "$@"; do
-        apk info -q "$pkg" 2>/dev/null || return 0
-    done
-    return 1
-}
+# ── 3. Instalar paquetes ──────────────────────────────────────────────────────
+echo "Instalando paquetes..."
 
-# Core runtime
-apk add --no-cache \
+# --no-network: solo usa el repo configurado (local). Si el repo es local,
+# nunca toca internet. Si fue a red (fallback), este flag se quita.
+APK_FLAGS="--no-cache --allow-untrusted"
+[ -n "$LOCAL_APK_REPO" ] && APK_FLAGS="$APK_FLAGS --no-network"
+
+apk add $APK_FLAGS \
     python3 py3-pip \
     smartmontools hdparm nvme-cli \
     util-linux lsblk pciutils usbutils dmidecode \
     bash shadow \
-    2>/dev/null || echo "WARNING: some APK installs failed"
+    2>/dev/null || echo "WARNING: paquetes base fallaron"
 
-# X11 + kiosk (may already be present in extended ISO)
-apk add --no-cache \
-    xorg-server xinit openbox dbus \
+apk add $APK_FLAGS \
+    xorg-server xinit openbox dbus dbus-openrc \
     xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
-    xf86-input-libinput \
+    xf86-input-libinput xf86-input-keyboard xf86-input-mouse \
     mesa-dri-gallium font-dejavu \
-    2>/dev/null || echo "WARNING: some X11 packages failed"
+    2>/dev/null || echo "WARNING: X11 parcialmente instalado"
 
-# Chromium (key dependency)
-apk add --no-cache chromium 2>/dev/null || \
-    echo "WARNING: chromium install failed — kiosk will not work"
+apk add $APK_FLAGS chromium \
+    2>/dev/null || echo "WARNING: chromium no instalado"
 
-# ── 3. Python wheels ──────────────────────────────────────────────────────────
+# ── 4. Instalar wheels Python (100% offline) ──────────────────────────────────
 WHEELS_DIR="/opt/rebincoop/wheels"
-APP_DIR="/opt/rebincoop"
-
 if [ -d "$WHEELS_DIR" ] && ls "$WHEELS_DIR"/*.whl > /dev/null 2>&1; then
-    echo "Installing pip wheels from $WHEELS_DIR..."
-    pip3 install --no-index --find-links "$WHEELS_DIR" --quiet \
+    echo "Instalando wheels Python desde $WHEELS_DIR..."
+    pip3 install \
+        --no-index \
+        --find-links "$WHEELS_DIR" \
+        --quiet \
         fastapi uvicorn websockets fpdf2 python-multipart \
         anyio starlette click h11 2>/dev/null || \
-    pip3 install --break-system-packages --no-index \
-        --find-links "$WHEELS_DIR" --quiet \
+    pip3 install \
+        --break-system-packages \
+        --no-index \
+        --find-links "$WHEELS_DIR" \
+        --quiet \
         fastapi uvicorn websockets fpdf2 python-multipart \
         anyio starlette click h11 2>/dev/null || \
-    echo "WARNING: pip wheel install failed"
+    echo "WARNING: pip wheels fallaron"
 else
-    echo "Wheels not found — trying network..."
-    pip3 install --no-cache-dir --quiet \
-        fastapi uvicorn websockets fpdf2 python-multipart 2>/dev/null || \
-    pip3 install --break-system-packages --no-cache-dir --quiet \
-        fastapi uvicorn websockets fpdf2 python-multipart 2>/dev/null || \
-    echo "WARNING: pip network install failed"
+    echo "ERROR: No se encontraron wheels en $WHEELS_DIR"
 fi
 
-# ── 4. Kiosk user ─────────────────────────────────────────────────────────────
-if ! id kiosk > /dev/null 2>&1; then
-    echo "Creating kiosk user..."
-    adduser -D -h /home/kiosk -s /bin/bash kiosk 2>/dev/null || \
-    adduser -D -h /home/kiosk -s /bin/sh kiosk
-    addgroup kiosk disk  2>/dev/null || true
-    addgroup kiosk input 2>/dev/null || true
-    addgroup kiosk video 2>/dev/null || true
-fi
-
+# ── 5. Finalizar configuración del usuario kiosk ─────────────────────────────
+for grp in disk input video audio; do
+    addgroup kiosk "$grp" 2>/dev/null || true
+done
 mkdir -p /home/kiosk/.config/openbox
 chown -R kiosk:kiosk /home/kiosk
-chmod +x /home/kiosk/.xinitrc  2>/dev/null || true
+chmod +x /home/kiosk/.xinitrc      2>/dev/null || true
 chmod +x /home/kiosk/.bash_profile 2>/dev/null || true
 
-# ── 5. Runtime dirs ───────────────────────────────────────────────────────────
+# ── 6. Directorios runtime ────────────────────────────────────────────────────
 mkdir -p /tmp/runtime-kiosk /tmp/chromium-cache /tmp/chromium-data /tmp/rebincoop
 chown -R kiosk:kiosk /tmp/runtime-kiosk /tmp/chromium-cache /tmp/chromium-data
 chmod 777 /tmp/rebincoop
 
-# ── 6. Services ───────────────────────────────────────────────────────────────
+# ── 7. Servicios ──────────────────────────────────────────────────────────────
 rc-update add local default 2>/dev/null || true
 rc-update add dbus  default 2>/dev/null || true
 rc-service dbus start       2>/dev/null || true
 
-# Allow X to run as kiosk
+# Permitir que el usuario kiosk ejecute Xorg
 chmod u+s /usr/bin/Xorg 2>/dev/null || true
 
-echo "=== Setup complete @ $(date) ==="
+echo "=== Setup completo @ $(date) ==="

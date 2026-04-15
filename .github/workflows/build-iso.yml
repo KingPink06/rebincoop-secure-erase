@@ -1,16 +1,11 @@
 name: Build Bootable ISO
 
-# ── Cuándo corre ───────────────────────────────────────────────────────────────
 on:
-  # Disparo manual desde la pestaña Actions en GitHub.com (botón "Run workflow")
   workflow_dispatch:
-
-  # También auto-dispara al crear un tag  v*  (ej: git tag v1.0 && git push --tags)
   push:
     tags:
       - 'v*'
 
-# ── Job principal ──────────────────────────────────────────────────────────────
 jobs:
   build-iso:
     name: Build REBINCOOP Secure Erase ISO
@@ -18,70 +13,95 @@ jobs:
     timeout-minutes: 60
 
     permissions:
-      contents: write            # Necesario para crear Releases
+      contents: write
 
     steps:
 
-      # 1. Descarga el código del repositorio
       - name: Checkout código
         uses: actions/checkout@v4
 
-      # 2. Instala herramientas del sistema en el runner Ubuntu
+      # ── Herramientas del sistema ───────────────────────────────────────────
       - name: Instalar dependencias del sistema
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            xorriso \
-            wget \
-            python3 \
-            python3-pip \
-            mtools \
-            dosfstools \
-            syslinux-utils \
-            ca-certificates
+            xorriso wget python3 python3-pip \
+            mtools dosfstools syslinux-utils ca-certificates
 
-      # 3. Pre-descarga wheels de Python que irán en el ISO
-      - name: Pre-descargar wheels de Python
+      # ── Paquetes APK offline via Docker Alpine ─────────────────────────────
+      # Docker está preinstalado en ubuntu-latest. Usamos un contenedor Alpine
+      # para ejecutar "apk fetch --recursive" y generar el APKINDEX.
+      # Resultado: /tmp/apkcache con todos los .apk + APKINDEX.tar.gz
+      - name: Descargar paquetes APK offline (via Alpine Docker)
+        run: |
+          mkdir -p /tmp/apkcache
+          docker run --rm \
+            -v /tmp/apkcache:/apkcache \
+            alpine:3.19 sh -c '
+              set -e
+              printf "%s\n" \
+                "https://dl-cdn.alpinelinux.org/alpine/v3.19/main" \
+                "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" \
+                > /etc/apk/repositories
+              apk update -q
+
+              echo "Descargando paquetes..."
+              apk fetch -q --recursive --output /apkcache \
+                python3 py3-pip \
+                smartmontools hdparm nvme-cli \
+                util-linux lsblk pciutils usbutils dmidecode \
+                chromium \
+                xorg-server \
+                xf86-video-fbdev xf86-video-vesa xf86-video-modesetting \
+                xf86-input-libinput xf86-input-keyboard xf86-input-mouse \
+                xinit openbox dbus dbus-openrc \
+                mesa-dri-gallium font-dejavu \
+                shadow bash libxrandr xrandr \
+                e2fsprogs dosfstools
+
+              echo "Generando APKINDEX..."
+              cd /apkcache
+              apk index --no-warnings \
+                --output APKINDEX.tar.gz \
+                *.apk
+
+              echo "Paquetes en cache: $(ls *.apk | wc -l)"
+            '
+          echo "Cache local: $(ls /tmp/apkcache | wc -l) archivos"
+
+      # ── Wheels de Python offline ───────────────────────────────────────────
+      - name: Descargar wheels de Python offline
         run: |
           mkdir -p /tmp/wheels
           pip3 download \
             --dest /tmp/wheels \
             --no-deps \
             --prefer-binary \
-            fastapi \
-            uvicorn \
-            websockets \
-            fpdf2 \
-            python-multipart \
-            anyio \
-            starlette \
-            click \
-            h11 \
-            idna \
-            sniffio \
-            exceptiongroup \
-            typing_extensions
-          echo "Wheels descargados: $(ls /tmp/wheels | wc -l)"
+            fastapi uvicorn websockets fpdf2 python-multipart \
+            anyio starlette click h11 idna sniffio \
+            exceptiongroup typing_extensions
+          echo "Wheels: $(ls /tmp/wheels | wc -l)"
 
-      # 4. Copia los archivos Python de la app al directorio que espera el build script
+      # ── Archivos de la app ─────────────────────────────────────────────────
       - name: Preparar archivos de la app
         run: |
           mkdir -p bootable/app
           for f in main.py disk_manager.py erase_engine.py \
                    pdf_generator.py system_info.py index.html; do
-            [ -f "$f" ] && cp "$f" bootable/app/ && echo "  → $f copiado"
+            [ -f "$f" ] && cp "$f" bootable/app/ && echo "  → $f"
           done
 
-      # 5. Ejecuta el build script directamente en el runner (sin Docker)
+      # ── Build del ISO ──────────────────────────────────────────────────────
       - name: Generar ISO
         run: |
           mkdir -p dist
           export DIST_DIR="${GITHUB_WORKSPACE}/dist"
           export WHEELS_DIR=/tmp/wheels
           export BUILD_DIR="${GITHUB_WORKSPACE}/bootable"
+          export APKCACHE_DIR=/tmp/apkcache
           bash bootable/scripts/build-iso.sh
 
-      # 6. Muestra info del ISO generado
+      # ── Info del resultado ─────────────────────────────────────────────────
       - name: Info del ISO
         run: |
           echo "=== ISO generada ==="
@@ -91,7 +111,7 @@ jobs:
           cat dist/rebincoop-secure-erase.iso.sha256 2>/dev/null || \
             sha256sum dist/rebincoop-secure-erase.iso
 
-      # 7. Sube el ISO como artefacto descargable (disponible 30 días)
+      # ── Subir artefacto ────────────────────────────────────────────────────
       - name: Subir ISO como artefacto
         uses: actions/upload-artifact@v4
         with:
@@ -101,29 +121,27 @@ jobs:
             dist/rebincoop-secure-erase.iso.sha256
           retention-days: 30
 
-      # 8. Si se disparó por un tag (v1.0, v2.0...) → crea un Release de GitHub
+      # ── GitHub Release en tags ─────────────────────────────────────────────
       - name: Crear GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: REBINCOOP Secure Erase ${{ github.ref_name }}
           body: |
-            ## REBINCOOP Secure Erase — ISO Booteable ${{ github.ref_name }}
+            ## REBINCOOP Secure Erase ${{ github.ref_name }} — ISO 100% Offline
 
             ### Descargar
-            Haz clic en `rebincoop-secure-erase.iso` abajo (~700 MB).
+            `rebincoop-secure-erase.iso` (~1 GB)
 
-            ### Flashear al USB
-            **Windows:** Rufus → selecciona el ISO → modo **DD Image** → Start
-            **Linux:** `sudo dd if=rebincoop-secure-erase.iso of=/dev/sdX bs=4M status=progress oflag=sync`
+            ### USB (Windows)
+            Rufus → DD Image mode → Start
+
+            ### PXE (red local, sin internet)
+            Ver `README-PXE.md` en el repositorio.
 
             ### Requisitos
-            - USB de 2 GB o más
-            - PC x86_64 con BIOS o UEFI (Secure Boot **desactivado**)
-            - El sistema arranca en ~60 segundos
-
-            ### Integridad
-            Verifica con el archivo `.sha256` adjunto.
+            - x86_64, BIOS o UEFI (Secure Boot **desactivado**)
+            - Sin internet — todo incluido en el ISO
           files: |
             dist/rebincoop-secure-erase.iso
             dist/rebincoop-secure-erase.iso.sha256
