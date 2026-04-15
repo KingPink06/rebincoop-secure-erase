@@ -40,7 +40,7 @@ PACKAGES=(
     pciutils usbutils dmidecode
     chromium
     xorg-server xf86-video-fbdev xf86-video-vesa xf86-video-modesetting
-    xf86-input-libinput xf86-input-keyboard xf86-input-mouse
+    xf86-input-libinput
     xinit openbox dbus dbus-openrc
     mesa-dri-gallium
     font-dejavu
