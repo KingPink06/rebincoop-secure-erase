@@ -220,7 +220,7 @@ fi
 
 menuentry "REBINCOOP Secure Erase" --class rebincoop {
     linux  /boot/vmlinuz-lts \
-           modules=loop,squashfs,sd-mod,usb-storage,iso9660 \
+           modules=loop,squashfs,sd-mod,usb-storage \
            alpine_dev=usb \
            apkovl=rebincoop \
            quiet loglevel=0
@@ -229,7 +229,7 @@ menuentry "REBINCOOP Secure Erase" --class rebincoop {
 
 menuentry "REBINCOOP Secure Erase (verbose)" --class rebincoop {
     linux  /boot/vmlinuz-lts \
-           modules=loop,squashfs,sd-mod,usb-storage,iso9660 \
+           modules=loop,squashfs,sd-mod,usb-storage \
            alpine_dev=usb \
            apkovl=rebincoop \
            loglevel=5
@@ -238,7 +238,7 @@ menuentry "REBINCOOP Secure Erase (verbose)" --class rebincoop {
 
 menuentry "Shell de emergencia (sin overlay)" --class alpine {
     linux  /boot/vmlinuz-lts \
-           modules=loop,squashfs,sd-mod,usb-storage,iso9660 \
+           modules=loop,squashfs,sd-mod,usb-storage \
            alpine_dev=usb
     initrd /boot/initramfs-lts
 }
@@ -255,7 +255,7 @@ if [ ! -f "$SYSLINUX_CFG" ]; then
 fi
 if [ -f "$SYSLINUX_CFG" ]; then
     # Inject our label at the top
-    sed -i '1s/^/DEFAULT rebincoop\nLABEL rebincoop\n  MENU LABEL REBINCOOP Secure Erase\n  KERNEL \/boot\/vmlinuz-lts\n  INITRD \/boot\/initramfs-lts\n  APPEND modules=loop,squashfs,sd-mod,usb-storage,iso9660 alpine_dev=usb apkovl=rebincoop quiet\n\n/' \
+    sed -i '1s/^/DEFAULT rebincoop\nLABEL rebincoop\n  MENU LABEL REBINCOOP Secure Erase\n  KERNEL \/boot\/vmlinuz-lts\n  INITRD \/boot\/initramfs-lts\n  APPEND modules=loop,squashfs,sd-mod,usb-storage alpine_dev=usb apkovl=rebincoop quiet\n\n/' \
         "$SYSLINUX_CFG" 2>/dev/null || true
     ok "syslinux.cfg personalizado"
 fi
